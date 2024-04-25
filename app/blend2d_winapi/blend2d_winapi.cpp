@@ -390,6 +390,7 @@ public:
 			}
 		}
 
+		// 그릴때마다 생성이 필요
 		_context = BLContext(_image);
 	}
 
@@ -504,19 +505,28 @@ public:
 		return _scale;
 	}
 
+	void repaint(void)
+	{
+		//_canvas.get_context()->reset();
+		//InvalidateRect(_hwnd, nullptr, TRUE);
+		//UpdateWindow(_hwnd);
+
+		/*
+		HDC hdc = GetDC(_hwnd);
+		paint(hdc);
+		ReleaseDC(_hwnd, hdc);
+		*/
+
+		InvalidateRect(_hwnd, nullptr, TRUE);
+	}
+
 	void set_scale(double s)
 	{
 		_scale = s;
 
 		recalc_view();
 
-		//_canvas.get_context()->reset();
-		//InvalidateRect(_hwnd, nullptr, TRUE);
-		//UpdateWindow(_hwnd);
-
-		HDC hdc = GetDC(_hwnd);
-		paint(hdc);
-		ReleaseDC(_hwnd, hdc);
+		repaint();
 	}
 
 	void recalc_view(void)

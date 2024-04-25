@@ -125,8 +125,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //  WM_DESTROY  - 종료 메시지를 게시하고 반환합니다.
 //
 //
-SIZE _size{ 0,0 };
-bool _first = true;
+//SIZE _size{ 0,0 };
+//bool _first = true;
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -135,8 +135,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	//--------------------------------------------------------------------------
 	case WM_CREATE:
 	{
-		blend2d_winapi_init(hWnd);
+		RECT rect;
 
+		blend2d_winapi_init(hWnd);
+		GetClientRect(hWnd, &rect);
+		blend2d_winapi_window_resize(rect.right, rect.bottom);
 		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
 	break;
@@ -158,7 +161,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		// lParam specifies the new of the client area
 		SIZE size = SIZE{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-		_size = size;
+		//_size = size;
 		blend2d_winapi_window_resize(size.cx, size.cy);
 
 		return DefWindowProc(hWnd, message, wParam, lParam);
@@ -171,7 +174,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hWnd, &ps);
 		// TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다...
-
+#if 0
+		// 최초 창 생성시 WM_SIZE보다 WM_PAINT가 먼저 발생된다.
 		if (_first)
 		{
 			if (_size.cx == 0 || _size.cy == 0)
@@ -181,6 +185,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			_first = false;
 		}
+#endif
 
 		blend2d_winapi_paint(hdc);
 
