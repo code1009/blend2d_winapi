@@ -23,6 +23,7 @@
 //===========================================================================
 #define NOMINMAX
 #include <Windows.h>
+#include <windowsx.h>
 
 //===========================================================================
 #include <blend2d.h>
@@ -392,6 +393,27 @@ public:
 		_context = BLContext(_image);
 	}
 
+	void reset(void)
+	{
+		/*
+		BLResult result;
+
+			result = _image.createFromData(
+				static_cast<int>(_cx), static_cast<int>(_cy),
+				BL_FORMAT_PRGB32,
+				_bitmap.get_data(),
+				_bitmap.get_scanline_bytes()
+			);
+			if (result != BL_SUCCESS)
+			{
+				printf("_image.createFromData() (%u)\n", result);
+			}
+			*/
+		BLContextCreateInfo createInfo{};
+		createInfo.threadCount = 8;
+			_context = BLContext(_image, createInfo);
+	}
+
 	BLContext* get_context(void)
 	{
 		return &_context;
@@ -421,26 +443,34 @@ public:
 class blend2d_winapi
 {
 public:
+	double _document_x{ 0 };
+	double _document_y{ 0 };
 	double _document_cx { 1920*2 };
 	double _document_cy { 1080*2 };
 
 	double _scale{ 1.0 };
 
-	std::int64_t _view_x;
-	std::int64_t _view_y;
-	std::int64_t _view_cx;
-	std::int64_t _view_cy;
+	std::int64_t _view_x {0};
+	std::int64_t _view_y {0};
+	std::int64_t _view_cx{0};
+	std::int64_t _view_cy{0};
 
-	std::int64_t _window_cx;
-	std::int64_t _window_cy;
+	std::int64_t _window_cx{0};
+	std::int64_t _window_cy{0};
 
 public:
 	canvas _canvas;
 	BLFontFace _font_face;
+	BLFont _font;
+	HWND _hwnd;
 
 public:
-	void create(void)
+	void create(HWND hwnd)
 	{
+		//-------------------------------------------------------------------
+		_hwnd = hwnd;
+
+
 		//-------------------------------------------------------------------
 		BLResult result;
 
@@ -450,10 +480,13 @@ public:
 		{
 			printf("_font_face.createFromFile() (%u)\n", result);
 		}
+
+		_font.createFromFace(_font_face, 50.0f);
 	}
 
 	void destory()
 	{
+
 	}
 
 	void window_resize(int cx, int cy)
@@ -463,23 +496,58 @@ public:
 
 		_canvas.set_size(cx, cy);
 
-		recalc_view_size();
+		//recalc_view();
 	}
 
-	void recalc_view_size(void)
+	double get_scale(void)
 	{
+		return _scale;
+	}
+
+	void set_scale(double s)
+	{
+		_scale = s;
+
+		recalc_view();
+
+		//_canvas.get_context()->reset();
+		//InvalidateRect(_hwnd, nullptr, TRUE);
+		//UpdateWindow(_hwnd);
+
+		HDC hdc = GetDC(_hwnd);
+		paint(hdc);
+		ReleaseDC(_hwnd, hdc);
+	}
+
+	void recalc_view(void)
+	{
+		_view_x = static_cast<std::int64_t>(_document_x * _scale);
+		_view_y = static_cast<std::int64_t>(_document_y * _scale);
+
 		_view_cx = static_cast<std::int64_t>(_document_cx * _scale);
 		_view_cy = static_cast<std::int64_t>(_document_cy * _scale);
 	}
 
 public:
-	void paint(HWND hwnd, HDC hdc)
+	void paint(HDC hdc)
 	{
 		BLContext* ctx;
 
 
+
+		if (0 == _window_cx)
+		{
+			return;
+		}
+		if (0 == _window_cy)
+		{
+			return;
+		}
+
+
 		ctx = _canvas.get_context();
 
+		_canvas.reset();
 		draw(ctx);
 
 
@@ -496,14 +564,39 @@ public:
 		stopwatch sw("blend2d");
 		scoped_time_measurer stm(&sw);
 
+		BLContextCookie context_cookie;
+
+
+		ctx->save(context_cookie);
+
+
+		ctx->scale(_scale);
+		ctx->translate(static_cast<double>(_view_x), static_cast<double>(_view_y));
+		draw_document(ctx);
+
+
+		ctx->restore(context_cookie);
+
+		ctx->end();
+	}
+
+	void draw_document(BLContext* ctx)
+	{
+		BLContextCookie context_cookie;
+
+
+		ctx->save(context_cookie);
+
 
 		ctx->clearAll();
+
 
 		draw_ex5(ctx);
 		draw_ex7(ctx);
 		draw_t1(ctx);
 
-		ctx->end();
+
+		ctx->restore(context_cookie);
 	}
 
 	void draw_ex5(BLContext* ctx)
@@ -543,28 +636,28 @@ public:
 		ctx->save(cookie1);
 		ctx->scale(0.5);
 		{
-			BLFont font;
-			font.createFromFace(_font_face, 50.0f);
+			//BLFont _font;
+			//_font.createFromFace(_font_face, 50.0f);
 
 			ctx->setFillStyle(BLRgba32(0xFFFF0000));
-			ctx->fillUtf8Text(BLPoint(60, 80), font, regularText);
+			ctx->fillUtf8Text(BLPoint(60, 80), _font, regularText);
 
 			//ctx->rotate(0.785398);
-			//ctx->fillUtf8Text(BLPoint(250, 80), font, rotatedText);
+			//ctx->fillUtf8Text(BLPoint(250, 80), _font, rotatedText);
 		}
 
 		ctx->save(cookie2);
 		ctx->scale(0.5);
 		{
 
-			BLFont font;
-			font.createFromFace(_font_face, 50.0f);
+			//BLFont _font;
+			//_font.createFromFace(_font_face, 50.0f);
 
 			ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
-			ctx->fillUtf8Text(BLPoint(60, 80), font, regularText);
+			ctx->fillUtf8Text(BLPoint(60, 80), _font, regularText);
 
 			//ctx->rotate(0.785398);
-			//ctx->fillUtf8Text(BLPoint(250, 80), font, rotatedText);
+			//ctx->fillUtf8Text(BLPoint(250, 80), _font, rotatedText);
 		}
 
 		ctx->restore(cookie2);
@@ -576,14 +669,14 @@ public:
 		ctx->translate(100, 100);
 
 		{
-			BLFont font;
-			font.createFromFace(_font_face, 50.0f);
+			//BLFont _font;
+			//_font.createFromFace(_font_face, 50.0f);
 
 			ctx->setFillStyle(BLRgba32(0xFF0000FF));
-			ctx->fillUtf8Text(BLPoint(60, 80), font, regularText);
+			ctx->fillUtf8Text(BLPoint(60, 80), _font, regularText);
 
 			ctx->rotate(0.785398);
-			ctx->fillUtf8Text(BLPoint(250, 80), font, rotatedText);
+			ctx->fillUtf8Text(BLPoint(250, 80), _font, rotatedText);
 		}
 		ctx->restore(cookie1);
 	}
@@ -595,7 +688,7 @@ public:
 
 		BLPath p;
 
-		int count = 300;
+		int count = 1000;
 		double PI = 3.14159265359;
 
 		double cx = _window_cx / 2.0f;
@@ -631,12 +724,12 @@ static blend2d_winapi* _blend2d_winapi;
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-void blend2d_winapi_init(void)
+void blend2d_winapi_init(HWND hwnd)
 {
 	//-----------------------------------------------------------------------
 	_blend2d_winapi = new blend2d_winapi();
 
-	_blend2d_winapi->create();
+	_blend2d_winapi->create(hwnd);
 }
 
 void blend2d_winapi_term(void)
@@ -652,8 +745,95 @@ void blend2d_winapi_window_resize(int cx, int cy)
 	_blend2d_winapi->window_resize(cx, cy);
 }
 
-void blend2d_winapi_paint(HWND hwnd, HDC hdc)
+void blend2d_winapi_paint(HDC hdc)
 {
-	_blend2d_winapi->paint(hwnd, hdc);
+	_blend2d_winapi->paint(hdc);
 }
+
+void OnHScroll(WPARAM wparam, LPARAM lparam)
+{
+}
+
+void OnVScroll(WPARAM wparam, LPARAM lparam)
+{
+
+}
+
+void OnMouseWheel(WPARAM wParam, LPARAM lParam)
+{
+	UINT nFlags{ (UINT)LOWORD(wParam) };
+	short zDelta{ (short)HIWORD(wParam) };
+	POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+
+	bool scale = false;
+
+	switch (nFlags)
+	{
+	case MK_CONTROL:
+		scale = true;
+		break;
+	case MK_LBUTTON:
+	case MK_RBUTTON:
+		break;
+	case MK_MBUTTON:
+		break;
+	case MK_SHIFT:
+		break;
+	case MK_XBUTTON1:
+	case MK_XBUTTON2:
+		break;
+	}
+
+	if (scale)
+	{
+		double viewscale_delta;
+		double viewscale_max;
+		double viewscale_min;
+		double viewscale;
+		double previous_viewscale;
+
+
+		viewscale = _blend2d_winapi->get_scale();
+		viewscale_max = 5.0f;
+		viewscale_min = 0.1f;
+		viewscale_delta = 0.1f;
+
+		previous_viewscale = viewscale;
+
+
+
+		if (zDelta > 0)
+		{
+			viewscale = viewscale + viewscale_delta;
+		}
+		else
+		{
+			viewscale = viewscale - viewscale_delta;
+		}
+
+		if (viewscale > viewscale_max)
+		{
+			viewscale = viewscale_max;
+		}
+		if (viewscale < viewscale_min)
+		{
+			viewscale = viewscale_min;
+		}
+
+		_blend2d_winapi->set_scale(viewscale);
+	}
+	else
+	{
+		if (zDelta > 0)
+		{
+			OnVScroll(MAKEWORD(SB_LINEUP, 0), 0);
+		}
+		else
+		{
+			OnVScroll(MAKEWORD(SB_LINEDOWN, 0), 0);
+		}
+	}
+
+}
+
 

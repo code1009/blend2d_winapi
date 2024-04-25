@@ -34,7 +34,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	LoadStringW(hInstance, IDC_APP, szWindowClass, MAX_LOADSTRING);
 	MyRegisterClass(hInstance);
 
-	blend2d_winapi_init();
 
 	// 애플리케이션 초기화를 수행합니다:
 	if (!InitInstance(hInstance, nCmdShow))
@@ -56,7 +55,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 		}
 	}
 
-	blend2d_winapi_term();
 
 	return (int)msg.wParam;
 }
@@ -128,10 +126,82 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 //
 SIZE _size{ 0,0 };
+bool _first = true;
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
 	{
+	//--------------------------------------------------------------------------
+	case WM_CREATE:
+	{
+		blend2d_winapi_init(hWnd);
+
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_DESTROY:
+	{
+		blend2d_winapi_term();
+
+		//return DefWindowProc(hWnd, message, wParam, lParam);
+		PostQuitMessage(0);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_SIZE:
+	{
+		UINT nType = (UINT)wParam;
+
+		// lParam specifies the new of the client area
+		SIZE size = SIZE{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+		_size = size;
+		blend2d_winapi_window_resize(size.cx, size.cy);
+
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = BeginPaint(hWnd, &ps);
+		// TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다...
+
+		if (_first)
+		{
+			if (_size.cx == 0 || _size.cy == 0)
+			{
+				blend2d_winapi_window_resize(ps.rcPaint.right, ps.rcPaint.bottom);
+			}
+
+			_first = false;
+		}
+
+		blend2d_winapi_paint(hdc);
+
+		EndPaint(hWnd, &ps);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_ERASEBKGND:
+	{
+		//return DefWindowProc(hWnd, message, wParam, lParam);
+		return 1;
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_HSCROLL: OnHScroll(wParam, lParam); return 0;
+	case WM_VSCROLL   : OnVScroll(wParam, lParam); return 0;
+	case WM_MOUSEWHEEL: OnMouseWheel(wParam, lParam); return 0;
+
+	//--------------------------------------------------------------------------
 	case WM_COMMAND:
 	{
 		int wmId = LOWORD(wParam);
@@ -149,48 +219,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		}
 	}
 	break;
-	case WM_SIZE:
-	{
-		UINT nType = (UINT)wParam;
-		SIZE size = SIZE{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-		_size = size;
-		blend2d_winapi_window_resize(size.cx, size.cy);
 
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-	break;
-
-	case WM_PAINT:
-	{
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(hWnd, &ps);
-		// TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다...
-		if (_size.cx == 0)
-		{
-			blend2d_winapi_window_resize(ps.rcPaint.right, ps.rcPaint.bottom);
-		}
-
-		blend2d_winapi_paint(hWnd, hdc);
-
-		EndPaint(hWnd, &ps);
-	}
-	break;
-
-	case WM_ERASEBKGND:
-	{
-		//return DefWindowProc(hWnd, message, wParam, lParam);
-		return 1;
-	}
-	break;
-
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		break;
-
-
+	//--------------------------------------------------------------------------
 	default:
+	{
 		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
+	break;
+	}
+
+
 	return 0;
 }
 
