@@ -20,6 +20,7 @@
 #include <iostream>
 #include <sstream>
 #include <cmath>
+
 //===========================================================================
 #define NOMINMAX
 #include <Windows.h>
@@ -29,33 +30,46 @@
 #include <blend2d.h>
 
 
-class duration_measurer
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+class stopwatch
 {
 public:
 	std::chrono::system_clock::time_point _start;
+	std::chrono::system_clock::time_point _stop;
+	std::chrono::microseconds _duration;
 	std::string _name;
 
 public:
-	void start(std::string name)
+	explicit stopwatch(std::string name) :
+		_name { name }
 	{
-		_start = std::chrono::system_clock::now();
-		_name = name;
 	}
 
-	void end(void)
+	~stopwatch()
 	{
-		std::chrono::system_clock::time_point _end;
+	}
 
+	void start(void)
+	{
+		_start = std::chrono::system_clock::now();
+	}
 
-		_end = std::chrono::system_clock::now();
+	void stop(void)
+	{
+		_stop = std::chrono::system_clock::now();
+	}
 
+	void measure(void)
+	{
+		_duration = std::chrono::duration_cast<std::chrono::microseconds>(_stop - _start);
+	}
 
-		std::chrono::microseconds _duration;
-
-
-		_duration = std::chrono::duration_cast<std::chrono::microseconds>(_end - _start);
-
-
+	void print(void)
+	{
 		std::ostringstream _oss;
 
 
@@ -65,6 +79,133 @@ public:
 		OutputDebugStringA(_oss.str().c_str());
 	}
 };
+
+class scoped_time_measurer
+{
+private:
+	stopwatch* _stopwatch;
+
+public:
+	explicit scoped_time_measurer(stopwatch* sw) :
+		_stopwatch{ sw }
+	{
+		_stopwatch->start();
+	}
+
+	~scoped_time_measurer()
+	{
+		_stopwatch->stop();
+		_stopwatch->measure();
+		_stopwatch->print();
+	}
+};
+
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+#if  0
+https://www.codeproject.com/Articles/1042516/Custom-Controls-in-Win-API-Scrolling
+
+typedef struct tagSCROLLINFO {
+	UINT cbSize;
+	UINT fMask;
+	int  nMin;
+	int  nMax;
+	UINT nPage;
+	int  nPos;
+	int  nTrackPos;
+} SCROLLINFO, * LPSCROLLINFO;
+
+
+
+https://www.catch22.net/tuts/win32/64bit-scrollbars/
+
+void example(HWND hwnd)
+{
+	UINT64 max = 0xffffffffffffffff;
+	UINT64 pos = 0x1234567812345678;
+
+	SetScrollInfo64(hwnd, SB_VERT, SIF_ALL, max, pos, 15, TRUE);
+
+	// when reacting to a WM_VSCROLL, with SB_THUMBTRACK/SB_THUMBPOS:
+	pos = GetScrollPos64(hwnd, SB_VERT, SIF_TRACKPOS, max);
+}
+
+#endif
+
+#define WIN16_SCROLLBAR_MAX 0x7fff
+#define WIN32_SCROLLBAR_MAX 0x7fffffff
+
+// Wrapper around SetScrollInfo, performs scaling to 
+// allow massive 64bit scroll ranges
+BOOL SetScrollInfo64(HWND hwnd,
+	int nBar,
+	UINT fMask,
+	UINT64 nMax64,
+	UINT64 nPos64,
+	int nPage,
+	BOOL fRedraw
+)
+{
+	SCROLLINFO si = { static_cast<UINT>(sizeof(si)), fMask };
+
+	// normal scroll range requires no adjustment
+	if (nMax64 <= WIN32_SCROLLBAR_MAX)
+	{
+		si.nMin = (int)0;
+		si.nMax = (int)nMax64;
+		si.nPage = (int)nPage;
+		si.nPos = (int)nPos64;
+	}
+	// scale the scrollrange down into allowed bounds
+	else
+	{
+		si.nMin = (int)0;
+		si.nMax = (int)WIN16_SCROLLBAR_MAX;
+		si.nPage = (int)nPage;
+		si.nPos = (int)(nPos64 / (nMax64 / WIN16_SCROLLBAR_MAX));
+	}
+
+	return SetScrollInfo(hwnd, nBar, &si, fRedraw);
+}
+
+UINT64 GetScrollPos64(HWND hwnd,
+	int nBar,
+	UINT fMask,
+	UINT64 nMax64
+)
+{
+	SCROLLINFO si = { static_cast<UINT>(sizeof(si)), fMask | SIF_PAGE };
+	UINT64 nPos32;
+
+
+	if (!GetScrollInfo(hwnd, nBar, &si))
+	{
+		return 0;
+	}
+
+
+	nPos32 = (fMask & SIF_TRACKPOS) ? si.nTrackPos : si.nPos;
+
+	// special-case: scroll position at the very end
+	if (nPos32 == WIN16_SCROLLBAR_MAX - si.nPage + 1)
+	{
+		return nMax64 - si.nPage + 1;
+	}// normal scroll range requires no adjustment
+	else if (nMax64 <= WIN32_SCROLLBAR_MAX)
+	{
+		return nPos32;
+	}
+	// adjust the scroll position to be relative to maximum value
+	else
+	{
+		return nPos32 * (nMax64 / WIN16_SCROLLBAR_MAX);
+	}
+}
+
 
 
 
@@ -76,14 +217,27 @@ class blend2d_winapi
 public:
 	void paint(HWND hwnd, HDC hdc)
 	{
-		paint_blend2d();
+		{
+			stopwatch sw("paint blend2d");
+			scoped_time_measurer stm(&sw);
+		
+			paint_blend2d();
+		}
 
+		{
+			stopwatch sw("paint gdi");
+			scoped_time_measurer stm(&sw);
 
-		duration_measurer dm;
-
-		dm.start("Gdiplus");
-
-		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHWND(hwnd, FALSE);
+			StretchDIBits(hdc,
+				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
+				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
+				_bitmap_data,
+				&_bmi,
+				DIB_RGB_COLORS, SRCCOPY); // 389usec
+		}
+#if 0
+//		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHWND(hwnd, FALSE);
+		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHDC(hdc);
 
 #if 0
 		pGraphics->SetCompositingMode(Gdiplus::CompositingModeSourceCopy);
@@ -93,11 +247,10 @@ public:
 		pGraphics->SetInterpolationMode(Gdiplus::InterpolationModeDefault);
 #endif
 
-		pGraphics->DrawImage(_bitmap, 0, 0);
+		pGraphics->DrawImage(_bitmap, 0, 0); // 10~20msec
 
 		delete pGraphics;
-
-		dm.end();
+#endif
 	}
 
 public:
@@ -119,25 +272,25 @@ public:
 	std::size_t _bitmap_data_size;
 	std::size_t _bitmap_cy = 1480;
 	std::size_t _bitmap_cx = 480;
+	BITMAPINFO _bmi;
 
 	void create_bitmap()
 	{
 		_bitmap_data_size = _bitmap_cx * _bitmap_cy * 4;
 
-		BITMAPINFO bmi;
 
 
-		memset(&bmi, 0, sizeof(bmi));
-		bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-		bmi.bmiHeader.biWidth = static_cast<LONG>(_bitmap_cx);
-		bmi.bmiHeader.biHeight = -static_cast<LONG>(_bitmap_cy);
-		bmi.bmiHeader.biPlanes = 1;
-		bmi.bmiHeader.biCompression = BI_RGB;
-		bmi.bmiHeader.biBitCount = 32;
+		memset(&_bmi, 0, sizeof(_bmi));
+		_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		_bmi.bmiHeader.biWidth = static_cast<LONG>(_bitmap_cx);
+		_bmi.bmiHeader.biHeight = -static_cast<LONG>(_bitmap_cy);
+		_bmi.bmiHeader.biPlanes = 1;
+		_bmi.bmiHeader.biCompression = BI_RGB;
+		_bmi.bmiHeader.biBitCount = 32;
 
 		_bitmap_data = new std::uint8_t[_bitmap_data_size];
 
-		_bitmap = new Gdiplus::Bitmap(&bmi, _bitmap_data);
+		_bitmap = new Gdiplus::Bitmap(&_bmi, _bitmap_data);
 
 		memset(_bitmap_data, 0xA0, _bitmap_data_size);
 	}
@@ -149,40 +302,46 @@ public:
 	}
 
 public:
-	BLImage _blimg;
-	BLContext _blctx;
+	BLImage _image;
+	BLContext _context;
+	BLFontFace _font_face;
 
 	void create_blend2d()
 	{
-		init_font();
+		BLResult result = _font_face.createFromFile("C:/Windows/Fonts/malgun.ttf");
+		if (result != BL_SUCCESS) 
+		{
+			printf("Failed to load a font (err=%u)\n", result);
+		}
+
+		/*
+		_image = BLImage(
+			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy), 
+			BL_FORMAT_PRGB32
+		);
+		*/
+		_image.createFromData(
+			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
+			BL_FORMAT_PRGB32, 
+			_bitmap_data, 
+			_bitmap_cx*4
+		);
 
 
-		//_blimg = BLImage(static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy), BL_FORMAT_PRGB32);
-		_blimg.createFromData(_bitmap_cx, _bitmap_cy, BL_FORMAT_PRGB32, _bitmap_data, _bitmap_cx*4);
-
-
-		_blctx = BLContext(_blimg);
+		_context = BLContext(_image);
 	}
 
 	void destroy_blend2d()
 	{
-		//delete _blctx;
-		//delete _blimg;
+		//delete _context;
+		//delete _image;
 	}
 
 	void paint_blend2d()
 	{
-		duration_measurer dm;
-
-		dm.start("blend2d");
-
-
-		_blctx.clearAll();
-		paint_ex(&_blctx);
-		_blctx.end();
-
-
-		dm.end();
+		_context.clearAll();
+		paint_ex(&_context);
+		_context.end();
 	}
 
 	void paint_ex(BLContext* ctx)
@@ -194,11 +353,6 @@ public:
 
 	void paint_ex5(BLContext* ctx)
 	{
-		duration_measurer dm;
-
-		dm.start("ex5");
-
-
 		// First shape filled with a radial gradient.
 		// By default, SRC_OVER composition is used.
 		ctx->setCompOp(BL_COMP_OP_SRC_OVER);
@@ -221,28 +375,10 @@ public:
 			BLRoundRect(195, 195, 270, 270, 25), linear);
 
 		ctx->setCompOp(BL_COMP_OP_SRC_OVER);
-
-		dm.end();
-	}
-
-	BLFontFace _face;
-	int init_font(void)
-	{
-		BLResult result = _face.createFromFile("C:/Windows/Fonts/malgun.ttf");
-		if (result != BL_SUCCESS) {
-			printf("Failed to load a font (err=%u)\n", result);
-			return 1;
-		}
-
 	}
 
 	void paint_ex7(BLContext* ctx)
 	{
-		duration_measurer dm;
-
-		dm.start("ex7");
-
-
 		const char regularText[] = "Hello Blend2D!";
 		const char rotatedText[] = u8"Rotated Text ÇÑ±Û";
 
@@ -253,7 +389,7 @@ public:
 		ctx->scale(0.5);
 		{
 			BLFont font;
-			font.createFromFace(_face, 50.0f);
+			font.createFromFace(_font_face, 50.0f);
 
 			ctx->setFillStyle(BLRgba32(0xFFFF0000));
 			ctx->fillUtf8Text(BLPoint(60, 80), font, regularText);
@@ -267,7 +403,7 @@ public:
 		{
 
 			BLFont font;
-			font.createFromFace(_face, 50.0f);
+			font.createFromFace(_font_face, 50.0f);
 
 			ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
 			ctx->fillUtf8Text(BLPoint(60, 80), font, regularText);
@@ -286,7 +422,7 @@ public:
 
 		{
 			BLFont font;
-			font.createFromFace(_face, 50.0f);
+			font.createFromFace(_font_face, 50.0f);
 
 			ctx->setFillStyle(BLRgba32(0xFF0000FF));
 			ctx->fillUtf8Text(BLPoint(60, 80), font, regularText);
@@ -296,7 +432,7 @@ public:
 		}
 		ctx->restore(cookie1);
 
-		dm.end();
+		//dm.end();
 	}
 
 
