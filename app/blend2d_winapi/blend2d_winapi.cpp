@@ -38,9 +38,9 @@
 class stopwatch
 {
 public:
-	std::chrono::system_clock::time_point _start;
-	std::chrono::system_clock::time_point _stop;
-	std::chrono::microseconds _duration;
+	std::chrono::system_clock::time_point _start{};
+	std::chrono::system_clock::time_point _stop{};
+	std::chrono::microseconds _duration{};
 	std::string _name;
 
 public:
@@ -212,15 +212,63 @@ UINT64 GetScrollPos64(HWND hwnd,
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
+class bitmap32
+{
+public:
+	std::uint8_t* _data = nullptr;
+	std::size_t   _data_size = 0;
+	std::size_t   _cy = 1480;
+	std::size_t   _cx = 480;
+	std::size_t   _color = 32;
+	BITMAPINFO    _bmi;
+
+	//Gdiplus::Bitmap* _bitmap;
+
+public:
+	void create(void)
+	{
+		memset(&_bmi, 0, sizeof(_bmi));
+		_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+		_bmi.bmiHeader.biWidth = static_cast<LONG>(_cx);
+		_bmi.bmiHeader.biHeight = -static_cast<LONG>(_cy);
+		_bmi.bmiHeader.biPlanes = 1;
+		_bmi.bmiHeader.biCompression = BI_RGB;
+		_bmi.bmiHeader.biBitCount = static_cast<WORD>(_color);
+
+		auto raw_scanline_width_in_bits{ _cx * _color };
+		auto aligned_scanline_width_in_bits{ (raw_scanline_width_in_bits + 31) & ~31 };
+		auto aligned_scanline_width_in_bytes{ raw_scanline_width_in_bits / 8 };
+
+		_data_size = aligned_scanline_width_in_bytes * _cy;
+		_data = new std::uint8_t[_data_size];
+
+		memset(_data, 0xA0, _data_size);
+
+
+		//_bitmap = new Gdiplus::Bitmap(&_bmi, _data);
+	}
+
+	void destroy(void)
+	{
+		//delete _bitmap;
+
+
+		delete[] _data;
+	}
+};
+
 class blend2d_winapi
 {
+	bitmap32 _bitmap;
+
 public:
 	void paint(HWND hwnd, HDC hdc)
 	{
 		{
 			stopwatch sw("paint blend2d");
 			scoped_time_measurer stm(&sw);
-		
+
+
 			paint_blend2d();
 		}
 
@@ -228,77 +276,45 @@ public:
 			stopwatch sw("paint gdi");
 			scoped_time_measurer stm(&sw);
 
+
 			StretchDIBits(hdc,
-				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
-				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
-				_bitmap_data,
-				&_bmi,
+				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap._cx), static_cast<int>(_bitmap._cy),
+				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap._cx), static_cast<int>(_bitmap._cy),
+				_bitmap._data,
+				&_bitmap._bmi,
 				DIB_RGB_COLORS, SRCCOPY); // 389usec
 		}
 #if 0
-//		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHWND(hwnd, FALSE);
-		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHDC(hdc);
+		{
+			//Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHWND(hwnd, FALSE);
+			Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHDC(hdc);
 
 #if 0
-		pGraphics->SetCompositingMode(Gdiplus::CompositingModeSourceCopy);
-		pGraphics->SetCompositingQuality(Gdiplus::CompositingQualityHighSpeed);
-		pGraphics->SetPixelOffsetMode(Gdiplus::PixelOffsetModeNone);
-		pGraphics->SetSmoothingMode(Gdiplus::SmoothingModeNone);
-		pGraphics->SetInterpolationMode(Gdiplus::InterpolationModeDefault);
+			pGraphics->SetCompositingMode(Gdiplus::CompositingModeSourceCopy);
+			pGraphics->SetCompositingQuality(Gdiplus::CompositingQualityHighSpeed);
+			pGraphics->SetPixelOffsetMode(Gdiplus::PixelOffsetModeNone);
+			pGraphics->SetSmoothingMode(Gdiplus::SmoothingModeNone);
+			pGraphics->SetInterpolationMode(Gdiplus::InterpolationModeDefault);
 #endif
 
-		pGraphics->DrawImage(_bitmap, 0, 0); // 10~20msec
+			pGraphics->DrawImage(_bitmap32._bitmap, 0, 0); // 10~20msec
 
-		delete pGraphics;
+			delete pGraphics;
+		}
 #endif
 	}
 
 public:
 	void create()
 	{
-		create_bitmap();
+		_bitmap.create();
 		create_blend2d();
 	}
 
 	void destory()
 	{
 		destroy_blend2d();
-		destroy_bitmap();
-	}
-
-public:
-	Gdiplus::Bitmap* _bitmap;
-	std::uint8_t* _bitmap_data;
-	std::size_t _bitmap_data_size;
-	std::size_t _bitmap_cy = 1480;
-	std::size_t _bitmap_cx = 480;
-	BITMAPINFO _bmi;
-
-	void create_bitmap()
-	{
-		_bitmap_data_size = _bitmap_cx * _bitmap_cy * 4;
-
-
-
-		memset(&_bmi, 0, sizeof(_bmi));
-		_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-		_bmi.bmiHeader.biWidth = static_cast<LONG>(_bitmap_cx);
-		_bmi.bmiHeader.biHeight = -static_cast<LONG>(_bitmap_cy);
-		_bmi.bmiHeader.biPlanes = 1;
-		_bmi.bmiHeader.biCompression = BI_RGB;
-		_bmi.bmiHeader.biBitCount = 32;
-
-		_bitmap_data = new std::uint8_t[_bitmap_data_size];
-
-		_bitmap = new Gdiplus::Bitmap(&_bmi, _bitmap_data);
-
-		memset(_bitmap_data, 0xA0, _bitmap_data_size);
-	}
-
-	void destroy_bitmap()
-	{
-		delete _bitmap;
-		delete[] _bitmap_data;
+		_bitmap.destroy();
 	}
 
 public:
@@ -308,27 +324,40 @@ public:
 
 	void create_blend2d()
 	{
-		BLResult result = _font_face.createFromFile("C:/Windows/Fonts/malgun.ttf");
-		if (result != BL_SUCCESS) 
-		{
-			printf("Failed to load a font (err=%u)\n", result);
-		}
-
+		BLResult result;
+		
 		/*
 		_image = BLImage(
 			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy), 
 			BL_FORMAT_PRGB32
 		);
 		*/
-		_image.createFromData(
-			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
+
+
+		result = _image.createFromData(
+			static_cast<int>(_bitmap._cx), static_cast<int>(_bitmap._cy),
 			BL_FORMAT_PRGB32, 
-			_bitmap_data, 
-			_bitmap_cx*4
+			_bitmap._data, 
+			_bitmap._data_size
 		);
+		if (result != BL_SUCCESS)
+		{
+			printf("_image.createFromData() (%u)\n", result);
+		}
 
 
 		_context = BLContext(_image);
+
+
+
+
+		result = _font_face.createFromFile("C:/Windows/Fonts/malgun.ttf");
+		if (result != BL_SUCCESS)
+		{
+			printf("_font_face.createFromFile() (%u)\n", result);
+		}
+
+
 	}
 
 	void destroy_blend2d()
@@ -431,10 +460,7 @@ public:
 			ctx->fillUtf8Text(BLPoint(250, 80), font, rotatedText);
 		}
 		ctx->restore(cookie1);
-
-		//dm.end();
 	}
-
 
 	void paint_t1(BLContext* ctx)
 	{
@@ -446,8 +472,8 @@ public:
 		int count = 300;
 		double PI = 3.14159265359;
 
-		double cx =  _bitmap_cx/ 2.0f;
-		double cy =  _bitmap_cy / 2.0f;
+		double cx =  _bitmap._cx/ 2.0f;
+		double cy =  _bitmap._cy / 2.0f;
 		double maxDist = 1000.0;
 		double baseAngle = _angle / 180.0 * PI;
 
