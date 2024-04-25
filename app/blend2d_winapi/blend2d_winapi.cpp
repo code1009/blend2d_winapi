@@ -1,6 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-#pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "D:/blend2d/install/lib/blend2d.lib")
 #if 0
 #if defined(_DEBUG)
@@ -24,7 +23,6 @@
 //===========================================================================
 #define NOMINMAX
 #include <Windows.h>
-#include <gdiplus.h>
 
 //===========================================================================
 #include <blend2d.h>
@@ -38,14 +36,14 @@
 class stopwatch
 {
 public:
-	std::chrono::system_clock::time_point _start;
-	std::chrono::system_clock::time_point _stop;
-	std::chrono::microseconds _duration;
+	std::chrono::system_clock::time_point _start{};
+	std::chrono::system_clock::time_point _stop{};
+	std::chrono::microseconds _duration{};
 	std::string _name;
 
 public:
 	explicit stopwatch(std::string name) :
-		_name { name }
+		_name{ name }
 	{
 	}
 
@@ -73,7 +71,14 @@ public:
 		std::ostringstream _oss;
 
 
-		_oss << _name << " duration: " << _duration.count() << "usec" << std::endl;
+		_oss 
+			<< "[" 
+			<< _name 
+			<< "] "
+			<< "duration: " 
+			<< _duration.count() 
+			<< "usec" 
+			<< std::endl;
 
 
 		OutputDebugStringA(_oss.str().c_str());
@@ -212,146 +217,296 @@ UINT64 GetScrollPos64(HWND hwnd,
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-class blend2d_winapi
+class bitmap32
 {
-public:
-	void paint(HWND hwnd, HDC hdc)
-	{
-		{
-			stopwatch sw("paint blend2d");
-			scoped_time_measurer stm(&sw);
-		
-			paint_blend2d();
-		}
+private:
+	std::uint8_t* _data{ nullptr };
+	std::size_t _data_size{ 0 };
+	BITMAPINFO _bmi{};
 
-		{
-			stopwatch sw("paint gdi");
-			scoped_time_measurer stm(&sw);
-
-			StretchDIBits(hdc,
-				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
-				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
-				_bitmap_data,
-				&_bmi,
-				DIB_RGB_COLORS, SRCCOPY); // 389usec
-		}
-#if 0
-//		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHWND(hwnd, FALSE);
-		Gdiplus::Graphics* pGraphics = Gdiplus::Graphics::FromHDC(hdc);
-
-#if 0
-		pGraphics->SetCompositingMode(Gdiplus::CompositingModeSourceCopy);
-		pGraphics->SetCompositingQuality(Gdiplus::CompositingQualityHighSpeed);
-		pGraphics->SetPixelOffsetMode(Gdiplus::PixelOffsetModeNone);
-		pGraphics->SetSmoothingMode(Gdiplus::SmoothingModeNone);
-		pGraphics->SetInterpolationMode(Gdiplus::InterpolationModeDefault);
-#endif
-
-		pGraphics->DrawImage(_bitmap, 0, 0); // 10~20msec
-
-		delete pGraphics;
-#endif
-	}
+private:
+	std::size_t       _cy{ 0 };
+	std::size_t       _cx{ 0 };
+	std::size_t       _aligned_scanline_cx_bytes{ 0 };
+	const std::size_t _color_bits = 32;
 
 public:
-	void create()
+	~bitmap32()
 	{
-		create_bitmap();
-		create_blend2d();
+		destroy();
 	}
 
-	void destory()
+private:
+	void create(void)
 	{
-		destroy_blend2d();
-		destroy_bitmap();
-	}
-
-public:
-	Gdiplus::Bitmap* _bitmap;
-	std::uint8_t* _bitmap_data;
-	std::size_t _bitmap_data_size;
-	std::size_t _bitmap_cy = 1480;
-	std::size_t _bitmap_cx = 480;
-	BITMAPINFO _bmi;
-
-	void create_bitmap()
-	{
-		_bitmap_data_size = _bitmap_cx * _bitmap_cy * 4;
-
-
-
 		memset(&_bmi, 0, sizeof(_bmi));
 		_bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-		_bmi.bmiHeader.biWidth = static_cast<LONG>(_bitmap_cx);
-		_bmi.bmiHeader.biHeight = -static_cast<LONG>(_bitmap_cy);
+		_bmi.bmiHeader.biWidth = static_cast<LONG>(_cx);
+		_bmi.bmiHeader.biHeight = -static_cast<LONG>(_cy);
 		_bmi.bmiHeader.biPlanes = 1;
 		_bmi.bmiHeader.biCompression = BI_RGB;
-		_bmi.bmiHeader.biBitCount = 32;
+		_bmi.bmiHeader.biBitCount = static_cast<WORD>(_color_bits);
 
-		_bitmap_data = new std::uint8_t[_bitmap_data_size];
 
-		_bitmap = new Gdiplus::Bitmap(&_bmi, _bitmap_data);
+		auto raw_scanline_width_in_bits{ _cx * _color_bits };
 
-		memset(_bitmap_data, 0xA0, _bitmap_data_size);
+		auto aligned_bits{ 32 - 1 };
+		auto aligned_scanline_width_in_bits{ (raw_scanline_width_in_bits + aligned_bits) & ~aligned_bits };
+		auto aligned_scanline_width_in_bytes{ aligned_scanline_width_in_bits / 8 };
+
+
+		_aligned_scanline_cx_bytes = aligned_scanline_width_in_bytes;
+
+
+		_data_size = _aligned_scanline_cx_bytes * _cy;
+
+		_data = new (std::nothrow) std::uint8_t[_data_size];
 	}
 
-	void destroy_bitmap()
+	void destroy(void)
 	{
-		delete _bitmap;
-		delete[] _bitmap_data;
+		if (nullptr != _data)
+		{
+			delete[] _data;
+		}
+		_data = nullptr;
 	}
 
 public:
-	BLImage _image;
-	BLContext _context;
-	BLFontFace _font_face;
-
-	void create_blend2d()
+	bool is_empty(void)
 	{
-		BLResult result = _font_face.createFromFile("C:/Windows/Fonts/malgun.ttf");
-		if (result != BL_SUCCESS) 
+		if (nullptr == _data) return true;
+
+		return false;
+	}
+
+	void set_size(std::size_t cx, std::size_t cy)
+	{
+		if (!is_empty())
 		{
-			printf("Failed to load a font (err=%u)\n", result);
+			destroy();
 		}
 
-		/*
-		_image = BLImage(
-			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy), 
-			BL_FORMAT_PRGB32
-		);
-		*/
-		_image.createFromData(
-			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
-			BL_FORMAT_PRGB32, 
-			_bitmap_data, 
-			_bitmap_cx*4
-		);
 
+		_cx = cx;
+		_cy = cy;
+
+
+		create();
+	}
+
+	std::size_t get_scanline_bytes(void)
+	{
+		return _aligned_scanline_cx_bytes;
+	}
+
+	std::uint8_t* get_data(void)
+	{
+		return _data;
+	}
+
+	BITMAPINFO* get_bitmap_info(void)
+	{
+		return &_bmi;
+	}
+
+	std::size_t get_cx(void)
+	{
+		return _cx;
+	}
+
+	std::size_t get_cy(void)
+	{
+		return _cy;
+	}
+};
+
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+class canvas
+{
+private:
+	bitmap32 _bitmap{};
+
+private:
+	std::size_t _cy{ 0 };
+	std::size_t _cx{ 0 };
+
+private:
+	BLImage _image;
+	BLContext _context; 
+
+public:
+	void set_size(std::size_t cx, std::size_t cy)
+	{
+		bool reset = false;
+
+
+		_cx = cx;
+		_cy = cy;
+
+
+		_bitmap.set_size(cx, cy);
+
+		if (cx == 0)
+		{
+			reset = true;
+		}
+
+		if (cx == 0)
+		{
+			reset = true;
+		}
+
+		if (_bitmap.is_empty())
+		{
+			reset = true;
+		}
+
+
+		BLResult result;
+
+
+		if (reset)
+		{
+			_image.reset();
+		}
+		else
+		{
+			result = _image.createFromData(
+				static_cast<int>(_cx), static_cast<int>(_cy),
+				BL_FORMAT_PRGB32,
+				_bitmap.get_data(),
+				_bitmap.get_scanline_bytes()
+			);
+			if (result != BL_SUCCESS)
+			{
+				printf("_image.createFromData() (%u)\n", result);
+			}
+		}
 
 		_context = BLContext(_image);
 	}
 
-	void destroy_blend2d()
+	BLContext* get_context(void)
 	{
-		//delete _context;
-		//delete _image;
+		return &_context;
 	}
 
-	void paint_blend2d()
+	void paint(HDC hdc)
 	{
-		_context.clearAll();
-		paint_ex(&_context);
-		_context.end();
+		if (_bitmap.is_empty())
+		{
+			return;
+		}
+
+		StretchDIBits(hdc,
+			static_cast<int>(0), static_cast<int>(0), static_cast<int>(_cx), static_cast<int>(_cy),
+			static_cast<int>(0), static_cast<int>(0), static_cast<int>(_cx), static_cast<int>(_cy),
+			_bitmap.get_data(),
+			_bitmap.get_bitmap_info(),
+			DIB_RGB_COLORS, SRCCOPY);
+	}
+};
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+class blend2d_winapi
+{
+public:
+	double _document_cx { 1920*2 };
+	double _document_cy { 1080*2 };
+
+	double _scale{ 1.0 };
+
+	std::int64_t _view_x;
+	std::int64_t _view_y;
+	std::int64_t _view_cx;
+	std::int64_t _view_cy;
+
+	std::int64_t _window_cx;
+	std::int64_t _window_cy;
+
+public:
+	canvas _canvas;
+	BLFontFace _font_face;
+
+public:
+	void create(void)
+	{
+		//-------------------------------------------------------------------
+		BLResult result;
+
+
+		result = _font_face.createFromFile("C:/Windows/Fonts/malgun.ttf");
+		if (result != BL_SUCCESS)
+		{
+			printf("_font_face.createFromFile() (%u)\n", result);
+		}
 	}
 
-	void paint_ex(BLContext* ctx)
+	void destory()
 	{
-		paint_ex5(ctx);
-		paint_ex7(ctx);
-		paint_t1(ctx);
 	}
 
-	void paint_ex5(BLContext* ctx)
+	void window_resize(int cx, int cy)
+	{
+		_window_cx = cx;
+		_window_cy = cy;
+
+		_canvas.set_size(cx, cy);
+
+		recalc_view_size();
+	}
+
+	void recalc_view_size(void)
+	{
+		_view_cx = static_cast<std::int64_t>(_document_cx * _scale);
+		_view_cy = static_cast<std::int64_t>(_document_cy * _scale);
+	}
+
+public:
+	void paint(HWND hwnd, HDC hdc)
+	{
+		BLContext* ctx;
+
+
+		ctx = _canvas.get_context();
+
+		draw(ctx);
+
+
+		{
+			stopwatch sw("gdi");
+			scoped_time_measurer stm(&sw);
+
+			_canvas.paint(hdc);
+		}
+	}
+
+	void draw(BLContext* ctx)
+	{
+		stopwatch sw("blend2d");
+		scoped_time_measurer stm(&sw);
+
+
+		ctx->clearAll();
+
+		draw_ex5(ctx);
+		draw_ex7(ctx);
+		draw_t1(ctx);
+
+		ctx->end();
+	}
+
+	void draw_ex5(BLContext* ctx)
 	{
 		// First shape filled with a radial gradient.
 		// By default, SRC_OVER composition is used.
@@ -377,7 +532,7 @@ public:
 		ctx->setCompOp(BL_COMP_OP_SRC_OVER);
 	}
 
-	void paint_ex7(BLContext* ctx)
+	void draw_ex7(BLContext* ctx)
 	{
 		const char regularText[] = "Hello Blend2D!";
 		const char rotatedText[] = u8"Rotated Text ÇÑ±Û";
@@ -431,12 +586,9 @@ public:
 			ctx->fillUtf8Text(BLPoint(250, 80), font, rotatedText);
 		}
 		ctx->restore(cookie1);
-
-		//dm.end();
 	}
 
-
-	void paint_t1(BLContext* ctx)
+	void draw_t1(BLContext* ctx)
 	{
 		//ctx->fillAll(BLRgba32(0xFF000000u));
 		double _angle = 45;
@@ -446,8 +598,8 @@ public:
 		int count = 300;
 		double PI = 3.14159265359;
 
-		double cx =  _bitmap_cx/ 2.0f;
-		double cy =  _bitmap_cy / 2.0f;
+		double cx = _window_cx / 2.0f;
+		double cy = _window_cy / 2.0f;
 		double maxDist = 1000.0;
 		double baseAngle = _angle / 180.0 * PI;
 
@@ -479,35 +631,11 @@ static blend2d_winapi* _blend2d_winapi;
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-void blend2d_winapi_paint(HWND hwnd, HDC hdc)
-{
-	_blend2d_winapi->paint(hwnd, hdc);
-}
-
-ULONG_PTR gdiplus_token;
-
 void blend2d_winapi_init(void)
 {
 	//-----------------------------------------------------------------------
-	HRESULT hResult;
-
-
-	hResult = ::OleInitialize(NULL);
-
-
-	//-----------------------------------------------------------------------
-	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
-
-
-	Gdiplus::Status status;
-
-
-	status = Gdiplus::GdiplusStartup(&gdiplus_token, &gdiplusStartupInput, NULL);
-
-
-	//-----------------------------------------------------------------------
 	_blend2d_winapi = new blend2d_winapi();
-	
+
 	_blend2d_winapi->create();
 }
 
@@ -517,13 +645,15 @@ void blend2d_winapi_term(void)
 	_blend2d_winapi->destory();
 
 	delete _blend2d_winapi;
-
-
-	//-----------------------------------------------------------------------
-	// Shutdown GDI+
-	Gdiplus::GdiplusShutdown(gdiplus_token);
-
-
-	//-----------------------------------------------------------------------
-	::OleUninitialize();
 }
+
+void blend2d_winapi_window_resize(int cx, int cy)
+{
+	_blend2d_winapi->window_resize(cx, cy);
+}
+
+void blend2d_winapi_paint(HWND hwnd, HDC hdc)
+{
+	_blend2d_winapi->paint(hwnd, hdc);
+}
+
