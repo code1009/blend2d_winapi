@@ -45,7 +45,7 @@ public:
 
 public:
 	explicit stopwatch(std::string name) :
-		_name { name }
+		_name{ name }
 	{
 	}
 
@@ -220,6 +220,7 @@ public:
 	std::size_t   _cy = 1480;
 	std::size_t   _cx = 480;
 	std::size_t   _color = 32;
+	std::size_t   _cx_bytes = 32;
 	BITMAPINFO    _bmi;
 
 	//Gdiplus::Bitmap* _bitmap;
@@ -239,7 +240,9 @@ public:
 		auto aligned_scanline_width_in_bits{ (raw_scanline_width_in_bits + 31) & ~31 };
 		auto aligned_scanline_width_in_bytes{ raw_scanline_width_in_bits / 8 };
 
-		_data_size = aligned_scanline_width_in_bytes * _cy;
+		_cx_bytes = aligned_scanline_width_in_bytes;
+
+		_data_size = _cx_bytes * _cy;
 		_data = new std::uint8_t[_data_size];
 
 		memset(_data, 0xA0, _data_size);
@@ -325,10 +328,11 @@ public:
 	void create_blend2d()
 	{
 		BLResult result;
-		
+
+
 		/*
 		_image = BLImage(
-			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy), 
+			static_cast<int>(_bitmap_cx), static_cast<int>(_bitmap_cy),
 			BL_FORMAT_PRGB32
 		);
 		*/
@@ -336,9 +340,9 @@ public:
 
 		result = _image.createFromData(
 			static_cast<int>(_bitmap._cx), static_cast<int>(_bitmap._cy),
-			BL_FORMAT_PRGB32, 
-			_bitmap._data, 
-			_bitmap._data_size
+			BL_FORMAT_PRGB32,
+			_bitmap._data,
+			_bitmap._cx_bytes
 		);
 		if (result != BL_SUCCESS)
 		{
@@ -347,8 +351,6 @@ public:
 
 
 		_context = BLContext(_image);
-
-
 
 
 		result = _font_face.createFromFile("C:/Windows/Fonts/malgun.ttf");
@@ -472,8 +474,8 @@ public:
 		int count = 300;
 		double PI = 3.14159265359;
 
-		double cx =  _bitmap._cx/ 2.0f;
-		double cy =  _bitmap._cy / 2.0f;
+		double cx = _bitmap._cx / 2.0f;
+		double cy = _bitmap._cy / 2.0f;
 		double maxDist = 1000.0;
 		double baseAngle = _angle / 180.0 * PI;
 
@@ -533,7 +535,7 @@ void blend2d_winapi_init(void)
 
 	//-----------------------------------------------------------------------
 	_blend2d_winapi = new blend2d_winapi();
-	
+
 	_blend2d_winapi->create();
 }
 
