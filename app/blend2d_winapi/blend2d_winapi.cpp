@@ -595,10 +595,13 @@ private:
 
 	std::int64_t _window_cx{0};
 	std::int64_t _window_cy{0};
+	
+	std::int64_t _paint_time_usec{ 0 };
 
 private:
 	canvas _canvas;
 	BLFontFace _font_face;
+	BLFontFace _font_face_status;
 	BLFont _font;
 	BLFont _underlay_font;
 	BLFont _overlay_font;
@@ -622,9 +625,16 @@ public:
 			printf("_font_face.createFromFile() (%u)\n", result);
 		}
 
+		result = _font_face_status.createFromFile("C:/Users/USER/AppData/Local/Microsoft/Windows/Fonts/NanumGothicCoding-Bold.ttf");
+		if (result != BL_SUCCESS)
+		{
+			printf("_font_face.createFromFile() (%u)\n", result);
+		}
+		
+
 		_font.createFromFace(_font_face, 50.0f);
-		_underlay_font.createFromFace(_font_face, 10.0f);
-		_overlay_font.createFromFace(_font_face, 20.0f);
+		_underlay_font.createFromFace(_font_face_status, 12.0f);
+		_overlay_font.createFromFace(_font_face_status, 16.0f);
 	}
 
 	void destory()
@@ -895,27 +905,30 @@ public:
 	void paint(HDC hdc)
 	{
 		stopwatch sw("paint");
-		scoped_time_measurer stm(&sw);
-
-
-		BLContext* ctx;
-
-
-		ctx = _canvas.begin();
-		if (!ctx)
 		{
-			return;
-		}
-		draw(ctx);
-		_canvas.end();
-
-
-		{
-			stopwatch sw("gdi");
 			scoped_time_measurer stm(&sw);
 
-			_canvas.paint(hdc);
+
+			BLContext* ctx;
+
+
+			ctx = _canvas.begin();
+			if (!ctx)
+			{
+				return;
+			}
+			draw(ctx);
+			_canvas.end();
+
+
+			{
+				stopwatch sw("gdi");
+				scoped_time_measurer stm(&sw);
+
+				_canvas.paint(hdc);
+			}
 		}
+		_paint_time_usec = sw._duration.count();
 	}
 
 	void draw(BLContext* ctx)
@@ -971,7 +984,7 @@ public:
 		char label[128];
 
 
-		line = 7;
+		line = 8;
 
 		text_offset_x = 10;
 		text_offset_y = 25;
@@ -980,29 +993,47 @@ public:
 		y = _window_cy - (line * text_offset_y);
 
 
-		ctx->setFillStyle(BLRgba32(0x80000000));
+		ctx->setFillStyle(BLRgba32(0xC00000FF));
 
+		/*
 		ctx->fillBox(
 			static_cast<double>(x), static_cast<double>(y),
 			static_cast<double>(_window_cx), static_cast<double>(_window_cy)
 		);
+		*/
+
+		ctx->fillRoundRect(
+			static_cast<double>(x), static_cast<double>(y),
+			static_cast<double>(360 - 10), static_cast<double>(line * text_offset_y - 10),
+			5
+			);
 
 
 		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
 
-		sprintf_s(label, "contents = (%.1f, %.1f)(%.1f, %.1f)", _contents_x, _contents_y, _contents_cx, _contents_cy);
+
+		sprintf_s(label, "render   = %lld usec", _paint_time_usec);
 		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
 		y += text_offset_y;
 
-		sprintf_s(label, "scale = (%.1f)", _scale);
+
+		sprintf_s(label, "window   = (%lld, %lld)", _window_cx, _window_cy);
 		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
 		y += text_offset_y;
 
-		sprintf_s(label, "view = (%lld, %lld)(%lld, %lld)", _view_x, _view_y, _view_cx, _view_cy);
+		sprintf_s(label, "contents = (%.1f, %.1f)-(%.1f, %.1f)", _contents_x, _contents_y, _contents_cx, _contents_cy);
 		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
 		y += text_offset_y;
 
-		sprintf_s(label, "view scroll x = (%lld)(%lld)(%lld, %lld)", 
+		sprintf_s(label, "scale    = %.1f", _scale);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "view     = (%lld, %lld)-(%lld, %lld)", _view_x, _view_y, _view_cx, _view_cy);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "scroll x = %lld, %lld, (%lld~%lld)", 
 			_view_x_scroll_line,
 			_view_x_scroll_page,
 			_view_x_scroll_min, _view_x_scroll_max
@@ -1010,7 +1041,7 @@ public:
 		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
 		y += text_offset_y;
 
-		sprintf_s(label, "view scroll y = (%lld)(%lld)(%lld, %lld)",
+		sprintf_s(label, "scroll y = %lld, %lld, (%lld~%lld)",
 			_view_y_scroll_line, 
 			_view_y_scroll_page,
 			_view_y_scroll_min, _view_y_scroll_max
@@ -1018,9 +1049,6 @@ public:
 		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
 		y += text_offset_y;
 
-		sprintf_s(label, "window = (%lld, %lld)", _window_cx, _window_cy);
-		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
-		y += text_offset_y;
 	}
 
 	void draw_window_grid(BLContext* ctx)
