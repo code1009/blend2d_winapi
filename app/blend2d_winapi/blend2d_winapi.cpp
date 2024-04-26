@@ -152,7 +152,7 @@ BOOL SetScrollInfo64(HWND hwnd,
 	UINT fMask,
 	UINT64 nMax64,
 	UINT64 nPos64,
-	int nPage,
+	UINT64 nPage,
 	BOOL fRedraw
 )
 {
@@ -261,7 +261,14 @@ private:
 
 		_data_size = _aligned_scanline_cx_bytes * _cy;
 
-		_data = new (std::nothrow) std::uint8_t[_data_size];
+		if (_data_size)
+		{
+			_data = new (std::nothrow) std::uint8_t[_data_size];
+		}
+		else
+		{
+			_data = nullptr;
+		}
 	}
 
 	void destroy(void)
@@ -276,7 +283,10 @@ private:
 public:
 	bool is_empty(void)
 	{
-		if (nullptr == _data) return true;
+		if (nullptr == _data)
+		{
+			return true;
+		}
 
 		return false;
 	}
@@ -334,12 +344,13 @@ private:
 	bitmap32 _bitmap{};
 
 private:
-	std::size_t _cy{ 0 };
-	std::size_t _cx{ 0 };
+	BLImage _image{};
+	BLContext _context{};
+	BLContext* _context_ptr{ nullptr };
 
 private:
-	BLImage _image;
-	BLContext _context; 
+	std::size_t _cy{ 0 };
+	std::size_t _cx{ 0 };
 
 public:
 	void set_size(std::size_t cx, std::size_t cy)
@@ -352,91 +363,207 @@ public:
 
 
 		_bitmap.set_size(cx, cy);
-
-		if (cx == 0)
+		
+		if (_bitmap.get_data())
 		{
-			reset = true;
+			BLResult result;
+
+
+			result = _image.createFromData(
+				static_cast<int>(_cx), static_cast<int>(_cy),
+				BL_FORMAT_PRGB32,
+				_bitmap.get_data(),
+				_bitmap.get_scanline_bytes()
+			);
+			if (result != BL_SUCCESS)
+			{
+				printf("_image.createFromData() (%u)\n", result);
+			}
 		}
+	}
 
-		if (cx == 0)
+	BLContext* begin(void)
+	{
+		if (_bitmap.get_data())
 		{
-			reset = true;
-		}
-
-		if (_bitmap.is_empty())
-		{
-			reset = true;
-		}
+			BLContextCreateInfo createInfo{};
 
 
-		BLResult result;
+			createInfo.threadCount = 1;
+			
+			//_context.begin(_image, createInfo);
+			_context = BLContext(_image, createInfo);
 
-
-		if (reset)
-		{
-			_image.reset();
+			_context_ptr = &_context;
 		}
 		else
 		{
-			result = _image.createFromData(
-				static_cast<int>(_cx), static_cast<int>(_cy),
-				BL_FORMAT_PRGB32,
-				_bitmap.get_data(),
-				_bitmap.get_scanline_bytes()
-			);
-			if (result != BL_SUCCESS)
-			{
-				printf("_image.createFromData() (%u)\n", result);
-			}
+			_context_ptr = nullptr;
 		}
 
-		// 그릴때마다 생성이 필요
-		_context = BLContext(_image);
-	}
-
-	void reset(void)
-	{
 		/*
 		BLResult result;
 
-			result = _image.createFromData(
-				static_cast<int>(_cx), static_cast<int>(_cy),
-				BL_FORMAT_PRGB32,
-				_bitmap.get_data(),
-				_bitmap.get_scanline_bytes()
-			);
-			if (result != BL_SUCCESS)
-			{
-				printf("_image.createFromData() (%u)\n", result);
-			}
-			*/
-		BLContextCreateInfo createInfo{};
-		createInfo.threadCount = 8;
-			_context = BLContext(_image, createInfo);
+		result = _image.createFromData(
+			static_cast<int>(_cx), static_cast<int>(_cy),
+			BL_FORMAT_PRGB32,
+			_bitmap.get_data(),
+			_bitmap.get_scanline_bytes()
+		);
+		if (result != BL_SUCCESS)
+		{
+			printf("_image.createFromData() (%u)\n", result);
+		}
+		*/
+
+		return _context_ptr;
 	}
 
-	BLContext* get_context(void)
+	void end(void)
 	{
-		return &_context;
+		if (_context_ptr)
+		{
+			_context_ptr->end();
+		}
+
+		_context_ptr = nullptr;
 	}
 
 	void paint(HDC hdc)
 	{
-		if (_bitmap.is_empty())
+		if (_bitmap.get_data())
 		{
-			return;
+			StretchDIBits(hdc,
+				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_cx), static_cast<int>(_cy),
+				static_cast<int>(0), static_cast<int>(0), static_cast<int>(_cx), static_cast<int>(_cy),
+				_bitmap.get_data(),
+				_bitmap.get_bitmap_info(),
+				DIB_RGB_COLORS, SRCCOPY);
 		}
-
-		StretchDIBits(hdc,
-			static_cast<int>(0), static_cast<int>(0), static_cast<int>(_cx), static_cast<int>(_cy),
-			static_cast<int>(0), static_cast<int>(0), static_cast<int>(_cx), static_cast<int>(_cy),
-			_bitmap.get_data(),
-			_bitmap.get_bitmap_info(),
-			DIB_RGB_COLORS, SRCCOPY);
 	}
 };
 
+std::int64_t on_scroll(
+	std::uint32_t scroll_code, std::int64_t pos,
+	std::uint64_t _view_y_scroll_page,
+	std::uint64_t _view_y_scroll_line,
+	std::uint64_t _view_y_scroll_min,
+	std::uint64_t _view_y_scroll_max,
+	std::uint64_t _view_y
+	)
+{
+	std::int64_t view_scroll_min;
+	std::int64_t view_scroll_max;
+	std::int64_t view_scroll_top;
+	std::int64_t view_scroll_bottom;
+	std::int64_t view_scroll_pos;
+	std::int64_t view_scroll_pos_current;
+	std::int64_t view_scroll_page;
+	std::int64_t view_scroll_line;
 
+
+	view_scroll_page = _view_y_scroll_page;
+	view_scroll_line = _view_y_scroll_line;
+
+
+	view_scroll_min = _view_y_scroll_min;
+	view_scroll_max = _view_y_scroll_max;
+
+
+	view_scroll_top = view_scroll_min;
+	if (view_scroll_page < view_scroll_max)
+	{
+		view_scroll_bottom = view_scroll_max - view_scroll_page;
+	}
+	else
+	{
+		view_scroll_bottom = view_scroll_min;
+	}
+
+
+	view_scroll_pos = _view_y;
+	view_scroll_pos_current = _view_y;
+
+
+	switch (scroll_code)
+	{
+	case SB_TOP:
+		view_scroll_pos_current = view_scroll_top;
+		break;
+
+	case SB_BOTTOM:
+		view_scroll_pos_current = view_scroll_bottom;
+		break;
+
+	case SB_LINEUP:
+		if (view_scroll_top < (view_scroll_pos - view_scroll_line))
+		{
+			view_scroll_pos_current = view_scroll_pos - view_scroll_line;
+		}
+		else
+		{
+			view_scroll_pos_current = view_scroll_top;
+		}
+		break;
+
+	case SB_LINEDOWN:
+		if ((view_scroll_pos + view_scroll_line) < view_scroll_bottom)
+		{
+			view_scroll_pos_current = view_scroll_pos + view_scroll_line;
+		}
+		else
+		{
+			view_scroll_pos_current = view_scroll_bottom;
+		}
+		break;
+
+	case SB_PAGEUP:
+		if (view_scroll_top < (view_scroll_pos - view_scroll_page))
+		{
+			view_scroll_pos_current = view_scroll_pos - view_scroll_page;
+		}
+		else
+		{
+			view_scroll_pos_current = view_scroll_top;
+		}
+		break;
+
+	case SB_PAGEDOWN:
+		if ((view_scroll_pos + view_scroll_page) < view_scroll_bottom)
+		{
+			view_scroll_pos_current = view_scroll_pos + view_scroll_page;
+		}
+		else
+		{
+			view_scroll_pos_current = view_scroll_bottom;
+		}
+		break;
+
+	case SB_THUMBTRACK:
+		view_scroll_pos_current = pos;
+		break;
+
+	case SB_THUMBPOSITION:
+		view_scroll_pos_current = pos;
+		break;
+
+	case SB_ENDSCROLL:
+		break;
+	}
+
+	if (view_scroll_pos_current < view_scroll_top)
+	{
+		view_scroll_pos_current = view_scroll_top;
+	}
+
+	if (view_scroll_bottom < view_scroll_pos_current)
+	{
+		view_scroll_pos_current = view_scroll_bottom;
+	}
+
+
+	return view_scroll_pos_current;
+}
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -444,10 +571,10 @@ public:
 class blend2d_winapi
 {
 public:
-	double _document_x{ 0 };
-	double _document_y{ 0 };
-	double _document_cx { 1920*2 };
-	double _document_cy { 1080*2 };
+	double _contents_x{ 0 };
+	double _contents_y{ 0 };
+	double _contents_cx { 1920*2 };
+	double _contents_cy { 1080*2 };
 
 	double _scale{ 1.0 };
 
@@ -455,6 +582,16 @@ public:
 	std::int64_t _view_y {0};
 	std::int64_t _view_cx{0};
 	std::int64_t _view_cy{0};
+
+	std::int64_t _view_x_scroll_min { 0 };
+	std::int64_t _view_x_scroll_max { 0 };
+	std::int64_t _view_x_scroll_page{ 0 };
+	std::int64_t _view_x_scroll_line{ 0 };
+
+	std::int64_t _view_y_scroll_min { 0 };
+	std::int64_t _view_y_scroll_max { 0 };
+	std::int64_t _view_y_scroll_page{ 0 };
+	std::int64_t _view_y_scroll_line{ 0 };
 
 	std::int64_t _window_cx{0};
 	std::int64_t _window_cy{0};
@@ -490,19 +627,154 @@ public:
 
 	}
 
-	void window_resize(int cx, int cy)
+public:
+	void set_window(int cx, int cy)
 	{
 		_window_cx = cx;
 		_window_cy = cy;
 
+		
 		_canvas.set_size(cx, cy);
+		
+		
+		update_view();
+		update_view_scroll();
+		update_scrollbar();
 
-		//recalc_view();
+
+		//repaint(); 호출 금지
 	}
 
 	double get_scale(void)
 	{
 		return _scale;
+	}
+	
+	void set_scale(double s)
+	{
+		_scale = s;
+
+		update_view();
+		update_view_scroll();
+		update_scrollbar();
+
+		repaint();
+	}
+
+	void on_vscroll(std::uint32_t scroll_code)
+	{
+		std::int64_t pos;
+
+
+		pos = GetScrollPos64(_hwnd, SB_VERT, SIF_TRACKPOS, _view_y_scroll_max);
+
+
+		std::int64_t view_scroll_pos_current;
+		std::int64_t view_scroll_pos;
+
+
+		view_scroll_pos = _view_y;
+		view_scroll_pos_current = on_scroll(scroll_code, pos,
+			_view_y_scroll_page,
+			_view_y_scroll_line,
+			_view_y_scroll_min,
+			_view_y_scroll_max,
+			_view_y
+			);
+
+
+		if (view_scroll_pos != view_scroll_pos_current)
+		{
+			_view_y = view_scroll_pos_current;
+			_contents_y = view_scroll_pos_current / _scale;
+
+			update_scrollbar();
+
+			repaint();
+		}
+	}
+
+	void on_hscroll(std::uint32_t scroll_code)
+	{
+		std::int64_t pos;
+
+
+		pos = GetScrollPos64(_hwnd, SB_HORZ, SIF_TRACKPOS, _view_x_scroll_max);
+
+
+		std::int64_t view_scroll_pos_current;
+		std::int64_t view_scroll_pos;
+
+
+		view_scroll_pos = _view_x;
+		view_scroll_pos_current = on_scroll(scroll_code, pos,
+			_view_x_scroll_page,
+			_view_x_scroll_line,
+			_view_x_scroll_min,
+			_view_x_scroll_max,
+			_view_x
+		);
+
+
+		if (view_scroll_pos != view_scroll_pos_current)
+		{
+			_view_x = view_scroll_pos_current;
+			_contents_x = view_scroll_pos_current / _scale;
+
+			update_scrollbar();
+
+			repaint();
+		}
+	}
+
+private:
+	void update_scrollbar(void)
+	{
+		SetScrollInfo64(_hwnd, SB_HORZ, SIF_ALL, _view_x_scroll_max, _view_x, _view_x_scroll_page, TRUE);
+		SetScrollInfo64(_hwnd, SB_VERT, SIF_ALL, _view_y_scroll_max, _view_y, _view_y_scroll_page, TRUE);
+	}
+	
+	void update_view_scroll(void)
+	{
+		if (_window_cx < _view_cx)
+		{
+			_view_x_scroll_min = 0;
+			_view_x_scroll_max = _view_cx;// -_window_cx;
+			_view_x_scroll_page = _window_cx;
+			_view_x_scroll_line = 10;
+		}
+		else
+		{
+			_view_x_scroll_min = 0;
+			_view_x_scroll_max = 0;
+			_view_x_scroll_page = 0;
+			_view_x_scroll_line = 0;
+		}
+
+
+		if (_window_cy < _view_cy)
+		{
+			_view_y_scroll_min = 0;
+			_view_y_scroll_max = _view_cy;// -_window_cy;
+			_view_y_scroll_page = _window_cy;
+			_view_y_scroll_line = 10;
+		}
+		else
+		{
+			_view_y_scroll_min = 0;
+			_view_y_scroll_max = 0;
+			_view_y_scroll_page = 0;
+			_view_y_scroll_line = 0;
+		}
+	}
+
+	void update_view(void)
+	{
+		_view_x = static_cast<std::int64_t>(_contents_x * _scale);
+		_view_cx = static_cast<std::int64_t>(_contents_cx * _scale);
+
+		_view_y = static_cast<std::int64_t>(_contents_y * _scale);
+		_view_cy = static_cast<std::int64_t>(_contents_cy * _scale);
 	}
 
 	void repaint(void)
@@ -520,45 +792,20 @@ public:
 		InvalidateRect(_hwnd, nullptr, TRUE);
 	}
 
-	void set_scale(double s)
-	{
-		_scale = s;
-
-		recalc_view();
-
-		repaint();
-	}
-
-	void recalc_view(void)
-	{
-		_view_x = static_cast<std::int64_t>(_document_x * _scale);
-		_view_y = static_cast<std::int64_t>(_document_y * _scale);
-
-		_view_cx = static_cast<std::int64_t>(_document_cx * _scale);
-		_view_cy = static_cast<std::int64_t>(_document_cy * _scale);
-	}
-
+	//--------------------------------------------------------------------------
 public:
 	void paint(HDC hdc)
 	{
 		BLContext* ctx;
 
 
-
-		if (0 == _window_cx)
+		ctx = _canvas.begin();
+		if (!ctx)
 		{
 			return;
 		}
-		if (0 == _window_cy)
-		{
-			return;
-		}
-
-
-		ctx = _canvas.get_context();
-
-		_canvas.reset();
 		draw(ctx);
+		_canvas.end();
 
 
 		{
@@ -581,16 +828,14 @@ public:
 
 
 		ctx->scale(_scale);
-		ctx->translate(static_cast<double>(_view_x), static_cast<double>(_view_y));
-		draw_document(ctx);
+		ctx->translate(-_contents_x, -_contents_y);
+		draw_contents(ctx);
 
 
 		ctx->restore(context_cookie);
-
-		ctx->end();
 	}
 
-	void draw_document(BLContext* ctx)
+	void draw_contents(BLContext* ctx)
 	{
 		BLContextCookie context_cookie;
 
@@ -600,6 +845,7 @@ public:
 
 		ctx->clearAll();
 
+		draw_contents_frame(ctx);
 
 		draw_ex5(ctx);
 		draw_ex7(ctx);
@@ -607,6 +853,12 @@ public:
 
 
 		ctx->restore(context_cookie);
+	}
+	
+	void draw_contents_frame(BLContext* ctx)
+	{
+		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
+		ctx->fillBox(0, 0, _contents_cx, _contents_cy);
 	}
 
 	void draw_ex5(BLContext* ctx)
@@ -701,8 +953,8 @@ public:
 		int count = 1000;
 		double PI = 3.14159265359;
 
-		double cx = _window_cx / 2.0f;
-		double cy = _window_cy / 2.0f;
+		double cx = _contents_cx / 2.0f;
+		double cy = _contents_cy / 2.0f;
 		double maxDist = 1000.0;
 		double baseAngle = _angle / 180.0 * PI;
 
@@ -752,7 +1004,7 @@ void blend2d_winapi_term(void)
 
 void blend2d_winapi_window_resize(int cx, int cy)
 {
-	_blend2d_winapi->window_resize(cx, cy);
+	_blend2d_winapi->set_window(cx, cy);
 }
 
 void blend2d_winapi_paint(HDC hdc)
@@ -760,20 +1012,31 @@ void blend2d_winapi_paint(HDC hdc)
 	_blend2d_winapi->paint(hdc);
 }
 
-void OnHScroll(WPARAM wparam, LPARAM lparam)
+void OnHScroll(WPARAM wParam, LPARAM lParam)
 {
+	UINT nSBCode = (int)LOWORD(wParam);
+	UINT nPos = static_cast<short>(HIWORD(wParam));
+	HWND pScrollBar = (HWND)lParam;
+
+
+	_blend2d_winapi->on_hscroll(nSBCode);
 }
 
-void OnVScroll(WPARAM wparam, LPARAM lparam)
+void OnVScroll(WPARAM wParam, LPARAM lParam)
 {
+	UINT nSBCode =  (int)LOWORD(wParam) ;
+	UINT nPos    =  static_cast<short>(HIWORD(wParam)) ;
+	HWND pScrollBar=  (HWND)lParam ;
 
+
+	_blend2d_winapi->on_vscroll(nSBCode);
 }
 
 void OnMouseWheel(WPARAM wParam, LPARAM lParam)
 {
-	UINT nFlags{ (UINT)LOWORD(wParam) };
-	short zDelta{ (short)HIWORD(wParam) };
-	POINT pt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+	UINT nFlags  = (UINT)LOWORD(wParam);
+	short zDelta = (short)HIWORD(wParam);
+	POINT pt     = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
 
 	bool scale = false;
 
