@@ -601,6 +601,7 @@ public:
 	BLFontFace _font_face;
 	BLFont _font;
 	HWND _hwnd;
+	bool _scrollbar_enabled{ true };
 
 public:
 	void create(HWND hwnd)
@@ -628,7 +629,7 @@ public:
 	}
 
 public:
-	void set_window(int cx, int cy)
+	void set_window_size(int cx, int cy)
 	{
 		_window_cx = cx;
 		_window_cy = cy;
@@ -637,7 +638,8 @@ public:
 		_canvas.set_size(cx, cy);
 		
 		
-		update_view();
+		update_view_size();
+		update_view_offset();
 		update_view_scroll();
 		update_scrollbar();
 
@@ -654,11 +656,35 @@ public:
 	{
 		_scale = s;
 
-		update_view();
+		update_view_size();
+		update_view_offset();
 		update_view_scroll();
 		update_scrollbar();
 
 		repaint();
+	}
+
+	void set_contents_size(double cx, double cy)
+	{
+		_contents_x  = 0;;
+		_contents_y  = 0;;
+		_contents_cx = cx;
+		_contents_cy = cy;
+
+		update_view_size();
+		update_view_offset();
+		update_view_scroll();
+		update_scrollbar();
+
+		repaint();
+	}
+
+	void enable_scrollbar(bool enable)
+	{
+		_scrollbar_enabled = enable;
+
+		update_view_scroll();
+		update_scrollbar();
 	}
 
 	void on_vscroll(std::uint32_t scroll_code)
@@ -736,12 +762,38 @@ private:
 	
 	void update_view_scroll(void)
 	{
-		if (_window_cx < _view_cx)
+		if (_scrollbar_enabled)
 		{
-			_view_x_scroll_min = 0;
-			_view_x_scroll_max = _view_cx;// -_window_cx;
-			_view_x_scroll_page = _window_cx;
-			_view_x_scroll_line = 10;
+			if (_window_cx < _view_cx)
+			{
+				_view_x_scroll_min = 0;
+				_view_x_scroll_max = _view_cx;
+				_view_x_scroll_page = _window_cx;
+				_view_x_scroll_line = 10;
+			}
+			else
+			{
+				_view_x_scroll_min = 0;
+				_view_x_scroll_max = 0;
+				_view_x_scroll_page = 0;
+				_view_x_scroll_line = 0;
+			}
+
+
+			if (_window_cy < _view_cy)
+			{
+				_view_y_scroll_min = 0;
+				_view_y_scroll_max = _view_cy;
+				_view_y_scroll_page = _window_cy;
+				_view_y_scroll_line = 10;
+			}
+			else
+			{
+				_view_y_scroll_min = 0;
+				_view_y_scroll_max = 0;
+				_view_y_scroll_page = 0;
+				_view_y_scroll_line = 0;
+			}
 		}
 		else
 		{
@@ -749,18 +801,7 @@ private:
 			_view_x_scroll_max = 0;
 			_view_x_scroll_page = 0;
 			_view_x_scroll_line = 0;
-		}
 
-
-		if (_window_cy < _view_cy)
-		{
-			_view_y_scroll_min = 0;
-			_view_y_scroll_max = _view_cy;// -_window_cy;
-			_view_y_scroll_page = _window_cy;
-			_view_y_scroll_line = 10;
-		}
-		else
-		{
 			_view_y_scroll_min = 0;
 			_view_y_scroll_max = 0;
 			_view_y_scroll_page = 0;
@@ -768,13 +809,43 @@ private:
 		}
 	}
 
-	void update_view(void)
+	void update_view_size(void)
+	{
+		_view_cx = static_cast<std::int64_t>(_contents_cx * _scale);
+		_view_cy = static_cast<std::int64_t>(_contents_cy * _scale);
+	}
+
+	void update_view_offset(void)
 	{
 		_view_x = static_cast<std::int64_t>(_contents_x * _scale);
-		_view_cx = static_cast<std::int64_t>(_contents_cx * _scale);
+		if (_view_cx < _window_cx)
+		{
+			_view_x = 0;
+		}
+		else
+		{
+			if (_view_cx < (_view_x + _window_cx))
+			{
+				_view_x = _view_cx - _window_cx;
+			}
+		}
+
 
 		_view_y = static_cast<std::int64_t>(_contents_y * _scale);
-		_view_cy = static_cast<std::int64_t>(_contents_cy * _scale);
+		if (_view_cy < _window_cy)
+		{
+			_view_y = 0;
+		}
+		else
+		{
+			if (_view_cy < (_view_y + _window_cy))
+			{
+				_view_y = _view_cy - _window_cy;
+			}
+		}
+
+		_contents_x = _view_x / _scale;
+		_contents_y = _view_y / _scale;
 	}
 
 	void repaint(void)
@@ -1004,7 +1075,7 @@ void blend2d_winapi_term(void)
 
 void blend2d_winapi_window_resize(int cx, int cy)
 {
-	_blend2d_winapi->set_window(cx, cy);
+	_blend2d_winapi->set_window_size(cx, cy);
 }
 
 void blend2d_winapi_paint(HDC hdc)
