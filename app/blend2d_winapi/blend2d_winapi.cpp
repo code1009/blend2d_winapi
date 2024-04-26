@@ -568,13 +568,13 @@ std::int64_t on_scroll(
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-class blend2d_winapi
+class window
 {
-public:
+private:
 	double _contents_x{ 0 };
 	double _contents_y{ 0 };
-	double _contents_cx { 1920*2 };
-	double _contents_cy { 1080*2 };
+	double _contents_cx { 0 };
+	double _contents_cy { 0 };
 
 	double _scale{ 1.0 };
 
@@ -596,12 +596,14 @@ public:
 	std::int64_t _window_cx{0};
 	std::int64_t _window_cy{0};
 
-public:
+private:
 	canvas _canvas;
 	BLFontFace _font_face;
 	BLFont _font;
+	BLFont _underlay_font;
+	BLFont _overlay_font;
 	HWND _hwnd;
-	bool _scrollbar_enabled{ true };
+	bool _scrollbar_enabled{ false };
 
 public:
 	void create(HWND hwnd)
@@ -621,6 +623,8 @@ public:
 		}
 
 		_font.createFromFace(_font_face, 50.0f);
+		_underlay_font.createFromFace(_font_face, 10.0f);
+		_overlay_font.createFromFace(_font_face, 20.0f);
 	}
 
 	void destory()
@@ -645,6 +649,8 @@ public:
 
 
 		//repaint(); 호출 금지
+		//윈도우 최초 실행을 제외 하고
+		//WM_SIZE이후 WM_PAINT호출되기떄문에 다시 그릴 필요 없음
 	}
 
 	double get_scale(void)
@@ -654,20 +660,23 @@ public:
 	
 	void set_scale(double s)
 	{
-		_scale = s;
+		if (_scale > 0.0)
+		{
+			_scale = s;
 
-		update_view_size();
-		update_view_offset();
-		update_view_scroll();
-		update_scrollbar();
+			update_view_size();
+			update_view_offset();
+			update_view_scroll();
+			update_scrollbar();
 
-		repaint();
+			repaint();
+		}
 	}
 
 	void set_contents_size(double cx, double cy)
 	{
-		_contents_x  = 0;;
-		_contents_y  = 0;;
+		_contents_x  = 0;
+		_contents_y  = 0;
 		_contents_cx = cx;
 		_contents_cy = cy;
 
@@ -685,6 +694,24 @@ public:
 
 		update_view_scroll();
 		update_scrollbar();
+	}
+
+	void fit_contents_to_window(bool vert=false)
+	{
+		if (vert)
+		{
+			if (_window_cy)
+			{
+				set_scale(_window_cy / _contents_cy);
+			}
+		}
+		else
+		{
+			if (_window_cx)
+			{
+				set_scale(_window_cx / _contents_cx);
+			}
+		}
 	}
 
 	void on_vscroll(std::uint32_t scroll_code)
@@ -867,6 +894,10 @@ private:
 public:
 	void paint(HDC hdc)
 	{
+		stopwatch sw("paint");
+		scoped_time_measurer stm(&sw);
+
+
 		BLContext* ctx;
 
 
@@ -892,18 +923,189 @@ public:
 		stopwatch sw("blend2d");
 		scoped_time_measurer stm(&sw);
 
+
+		ctx->clearAll();
+
+		draw_underlay(ctx);
+		draw_contents(ctx);
+		draw_overlay(ctx);
+	}
+
+	void draw_underlay(BLContext* ctx)
+	{
 		BLContextCookie context_cookie;
 
 
 		ctx->save(context_cookie);
 
 
-		ctx->scale(_scale);
-		ctx->translate(-_contents_x, -_contents_y);
-		draw_contents(ctx);
+		draw_window_grid(ctx);
 
 
 		ctx->restore(context_cookie);
+	}
+
+	void draw_overlay(BLContext* ctx)
+	{
+		BLContextCookie context_cookie;
+
+
+		ctx->save(context_cookie);
+
+		
+		draw_window_info(ctx);
+
+
+		ctx->restore(context_cookie);
+	}
+
+	void draw_window_info(BLContext* ctx)
+	{
+		std::int64_t x;
+		std::int64_t y;
+		std::int64_t line;
+
+		std::int64_t text_offset_x;
+		std::int64_t text_offset_y;
+
+		char label[128];
+
+
+		line = 7;
+
+		text_offset_x = 10;
+		text_offset_y = 25;
+
+		x = _window_cx - 360;
+		y = _window_cy - (line * text_offset_y);
+
+
+		ctx->setFillStyle(BLRgba32(0x80000000));
+
+		ctx->fillBox(
+			static_cast<double>(x), static_cast<double>(y),
+			static_cast<double>(_window_cx), static_cast<double>(_window_cy)
+		);
+
+
+		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
+
+		sprintf_s(label, "contents = (%.1f, %.1f)(%.1f, %.1f)", _contents_x, _contents_y, _contents_cx, _contents_cy);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "scale = (%.1f)", _scale);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "view = (%lld, %lld)(%lld, %lld)", _view_x, _view_y, _view_cx, _view_cy);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "view scroll x = (%lld)(%lld)(%lld, %lld)", 
+			_view_x_scroll_line,
+			_view_x_scroll_page,
+			_view_x_scroll_min, _view_x_scroll_max
+		);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "view scroll y = (%lld)(%lld)(%lld, %lld)",
+			_view_y_scroll_line, 
+			_view_y_scroll_page,
+			_view_y_scroll_min, _view_y_scroll_max
+		);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+
+		sprintf_s(label, "window = (%lld, %lld)", _window_cx, _window_cy);
+		ctx->fillUtf8Text(BLPoint(static_cast<double>(x + text_offset_x), y + static_cast<double>(text_offset_y)), _overlay_font, label);
+		y += text_offset_y;
+	}
+
+	void draw_window_grid(BLContext* ctx)
+	{
+		if (1.0 < _scale)
+		{
+			return;
+		}
+
+
+		std::int64_t x;
+		std::int64_t y;
+
+		std::int64_t text_offset_x;
+		std::int64_t text_offset_y;
+
+		double contents_x;
+		double contents_y;
+
+		char label[128];
+
+
+		text_offset_x = 5;
+		text_offset_y = 15;
+
+
+		ctx->setStrokeWidth(1);
+		ctx->setStrokeStyle(BLRgba32(0x20FFFFFF));
+		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
+
+		for (y = 0; y < _window_cy; y += 100)
+		{
+			for (x = 0; x < _window_cx; x += 100)
+			{
+				ctx->strokeLine(BLPoint(static_cast<double>(x), static_cast<double>(0)), BLPoint(static_cast<double>(x), static_cast<double>(_window_cy)));
+				ctx->strokeLine(BLPoint(static_cast<double>(0), static_cast<double>(y)), BLPoint(static_cast<double>(_window_cx), static_cast<double>(y)));
+
+
+				contents_x = _contents_x + x / _scale;
+				contents_y = _contents_y + y / _scale;
+
+				sprintf_s(label, "(%.1f, %.1f)", contents_x, contents_y);
+
+
+				ctx->fillUtf8Text(
+					BLPoint(static_cast<double>(x + text_offset_x), static_cast<double>(y + text_offset_y)),
+					_underlay_font, label);
+			}
+		}
+	}
+
+	void draw_contents_grid(BLContext* ctx)
+	{
+		if (_scale < 1.0)
+		{
+			return;
+		}
+
+
+		double x;
+		double y;
+
+		char label[128];
+
+
+		ctx->setStrokeWidth(1);
+		//ctx->setStrokeStartCap(BL_STROKE_CAP_ROUND);
+		//ctx->setStrokeEndCap(BL_STROKE_CAP_BUTT);
+		ctx->setStrokeStyle(BLRgba32(0x20FFFFFF));
+		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
+
+		for (y = 0.0; y < _contents_cy; y += 100.0)
+		{
+			for (x = 0.0; x < _contents_cx; x += 100.0)
+			{
+				ctx->strokeLine(BLPoint(x, 0), BLPoint(x, _contents_cy));
+				ctx->strokeLine(BLPoint(0, y), BLPoint(_contents_cx, y));
+
+
+				sprintf_s(label, "(%.1f, %.1f)", x, y);
+
+
+				ctx->fillUtf8Text(BLPoint(x + 5, y + 15), _underlay_font, label);
+			}
+		}
 	}
 
 	void draw_contents(BLContext* ctx)
@@ -914,9 +1116,41 @@ public:
 		ctx->save(context_cookie);
 
 
-		ctx->clearAll();
+		ctx->scale(_scale);
+		ctx->translate(-_contents_x, -_contents_y);
 
-		draw_contents_frame(ctx);
+
+		draw_contents_background(ctx);
+		draw_contents_foreground(ctx);
+
+
+		ctx->restore(context_cookie);
+	}
+
+	void draw_contents_background(BLContext* ctx)
+	{
+		BLContextCookie context_cookie;
+
+
+		ctx->save(context_cookie);
+
+
+		ctx->setFillStyle(BLRgba32(0x40808080));
+		ctx->fillBox(0, 0, _contents_cx, _contents_cy);
+
+		draw_contents_grid(ctx);
+
+
+		ctx->restore(context_cookie);
+	}
+
+	void draw_contents_foreground(BLContext* ctx)
+	{
+		BLContextCookie context_cookie;
+
+
+		ctx->save(context_cookie);
+
 
 		draw_ex5(ctx);
 		draw_ex7(ctx);
@@ -924,12 +1158,6 @@ public:
 
 
 		ctx->restore(context_cookie);
-	}
-	
-	void draw_contents_frame(BLContext* ctx)
-	{
-		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
-		ctx->fillBox(0, 0, _contents_cx, _contents_cy);
 	}
 
 	void draw_ex5(BLContext* ctx)
@@ -1049,7 +1277,7 @@ public:
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-static blend2d_winapi* _blend2d_winapi;
+static window* _blend2d_window;
 
 
 
@@ -1057,57 +1285,93 @@ static blend2d_winapi* _blend2d_winapi;
 
 /////////////////////////////////////////////////////////////////////////////
 //===========================================================================
-void blend2d_winapi_init(HWND hwnd)
+void OnCreate(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
 	//-----------------------------------------------------------------------
-	_blend2d_winapi = new blend2d_winapi();
+	_blend2d_window = new window();
 
-	_blend2d_winapi->create(hwnd);
-}
+	
+	_blend2d_window->create(hWnd);
 
-void blend2d_winapi_term(void)
-{
+
 	//-----------------------------------------------------------------------
-	_blend2d_winapi->destory();
+	RECT rect;
 
-	delete _blend2d_winapi;
+
+	GetClientRect(hWnd, &rect);
+
+
+	// 최초 윈도우 생성시 WM_PAINT가 먼저 수행 되고
+	// WM_SIZE가 나중에 수행 된다.
+	// 최초 실행시 윈도우 크기를 먼저 지정하지 않으면,
+	// 크기가 지정되지 않은 채로 그리기 동작이 먼저 수행한다.
+	// 따라서, 먼저 윈도우 크기를 지정한다.
+	// 그 이후에 WM_SIZE 이후에 WM_PAINT가 수행 된다.
+
+	_blend2d_window->set_window_size(rect.right, rect.bottom);
+	_blend2d_window->set_contents_size(1920, 1080);
+	_blend2d_window->fit_contents_to_window(true);
+	_blend2d_window->enable_scrollbar(true);
 }
 
-void blend2d_winapi_window_resize(int cx, int cy)
+void OnDestroy(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	_blend2d_winapi->set_window_size(cx, cy);
+	_blend2d_window->destory();
+
+	_blend2d_window = nullptr;
 }
 
-void blend2d_winapi_paint(HDC hdc)
+void OnSize(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	_blend2d_winapi->paint(hdc);
+	UINT nType = (UINT)wParam;
+	SIZE size = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) }; // lParam specifies the new of the client area
+
+
+	_blend2d_window->set_window_size(size.cx, size.cy);
+//	_blend2d_window->fit_contents_to_window(true);
 }
 
-void OnHScroll(WPARAM wParam, LPARAM lParam)
+void OnPaint(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	UINT nSBCode = (int)LOWORD(wParam);
-	UINT nPos = static_cast<short>(HIWORD(wParam));
+	PAINTSTRUCT ps;
+	HDC hdc;
+	
+	
+	hdc = BeginPaint(hWnd, &ps);
+
+
+	_blend2d_window->paint(hdc);
+
+
+	EndPaint(hWnd, &ps);
+}
+
+void OnHScroll(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	UINT nSBCode    = (int)LOWORD(wParam);
+	UINT nPos       = (short)(HIWORD(wParam));
 	HWND pScrollBar = (HWND)lParam;
 
 
-	_blend2d_winapi->on_hscroll(nSBCode);
+	_blend2d_window->on_hscroll(nSBCode);
 }
 
-void OnVScroll(WPARAM wParam, LPARAM lParam)
+void OnVScroll(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	UINT nSBCode =  (int)LOWORD(wParam) ;
-	UINT nPos    =  static_cast<short>(HIWORD(wParam)) ;
-	HWND pScrollBar=  (HWND)lParam ;
+	UINT nSBCode    = (int)LOWORD(wParam);
+	UINT nPos       = (short)HIWORD(wParam);
+	HWND pScrollBar = (HWND)lParam ;
 
 
-	_blend2d_winapi->on_vscroll(nSBCode);
+	_blend2d_window->on_vscroll(nSBCode);
 }
 
-void OnMouseWheel(WPARAM wParam, LPARAM lParam)
+void OnMouseWheel(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	UINT nFlags  = (UINT)LOWORD(wParam);
+	UINT  nFlags = (UINT)LOWORD(wParam);
 	short zDelta = (short)HIWORD(wParam);
 	POINT pt     = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+
 
 	bool scale = false;
 
@@ -1133,17 +1397,20 @@ void OnMouseWheel(WPARAM wParam, LPARAM lParam)
 		double viewscale_delta;
 		double viewscale_max;
 		double viewscale_min;
-		double viewscale;
-		double previous_viewscale;
 
 
-		viewscale = _blend2d_winapi->get_scale();
-		viewscale_max = 5.0f;
+		viewscale_max = 10.0f;
 		viewscale_min = 0.1f;
 		viewscale_delta = 0.1f;
 
-		previous_viewscale = viewscale;
 
+		double viewscale;
+		int viewscale_x10;
+
+
+		viewscale = _blend2d_window->get_scale();
+		viewscale_x10 = static_cast<int>((viewscale + 0.05) * 10);
+		viewscale = viewscale_x10 / 10.0;
 
 
 		if (zDelta > 0)
@@ -1155,6 +1422,7 @@ void OnMouseWheel(WPARAM wParam, LPARAM lParam)
 			viewscale = viewscale - viewscale_delta;
 		}
 
+
 		if (viewscale > viewscale_max)
 		{
 			viewscale = viewscale_max;
@@ -1164,20 +1432,20 @@ void OnMouseWheel(WPARAM wParam, LPARAM lParam)
 			viewscale = viewscale_min;
 		}
 
-		_blend2d_winapi->set_scale(viewscale);
+
+		_blend2d_window->set_scale(viewscale);
 	}
 	else
 	{
 		if (zDelta > 0)
 		{
-			OnVScroll(MAKEWORD(SB_LINEUP, 0), 0);
+			OnVScroll(hWnd, 0, MAKEWORD(SB_LINEUP, 0), 0);
 		}
 		else
 		{
-			OnVScroll(MAKEWORD(SB_LINEDOWN, 0), 0);
+			OnVScroll(hWnd, 0, MAKEWORD(SB_LINEDOWN, 0), 0);
 		}
 	}
-
 }
 
 

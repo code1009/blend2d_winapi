@@ -1,71 +1,157 @@
-﻿// App.cpp : 애플리케이션에 대한 진입점을 정의합니다.
-//
-
+﻿/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
 #include "framework.h"
 #include "windowsx.h"
 #include "App.h"
 #include "blend2d_winapi/blend2d_winapi.hpp"
 
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
 #define MAX_LOADSTRING 100
 
-// 전역 변수:
-HINSTANCE hInst;                                // 현재 인스턴스입니다.
-WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
-WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
 
-// 이 코드 모듈에 포함된 함수의 선언을 전달합니다:
-ATOM                MyRegisterClass(HINSTANCE hInstance);
-BOOL                InitInstance(HINSTANCE, int);
-LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
-INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
-int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-	_In_opt_ HINSTANCE hPrevInstance,
-	_In_ LPWSTR    lpCmdLine,
-	_In_ int       nCmdShow)
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+INT_PTR CALLBACK About(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	UNREFERENCED_PARAMETER(hPrevInstance);
-	UNREFERENCED_PARAMETER(lpCmdLine);
-
-	// TODO: 여기에 코드를 입력합니다.
-
-	// 전역 문자열을 초기화합니다.
-	LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-	LoadStringW(hInstance, IDC_APP, szWindowClass, MAX_LOADSTRING);
-	MyRegisterClass(hInstance);
-
-
-	// 애플리케이션 초기화를 수행합니다:
-	if (!InitInstance(hInstance, nCmdShow))
+	UNREFERENCED_PARAMETER(lParam);
+	switch (uMsg)
 	{
-		return FALSE;
-	}
+	case WM_INITDIALOG:
+		return (INT_PTR)TRUE;
 
-	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_APP));
-
-	MSG msg;
-
-	// 기본 메시지 루프입니다:
-	while (GetMessage(&msg, nullptr, 0, 0))
-	{
-		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+	case WM_COMMAND:
+		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
 		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
 		}
+		break;
 	}
 
 
-	return (int)msg.wParam;
+	return (INT_PTR)FALSE;
 }
 
 
 
-//
-//  함수: MyRegisterClass()
-//
-//  용도: 창 클래스를 등록합니다.
-//
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+HINSTANCE hInst;
+WCHAR szTitle[MAX_LOADSTRING];
+WCHAR szWindowClass[MAX_LOADSTRING];
+
+
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (uMsg)
+	{
+	//--------------------------------------------------------------------------
+	case WM_CREATE:
+	{
+		OnCreate(hWnd, uMsg, wParam, lParam);
+		return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_DESTROY:
+	{
+		OnDestroy(hWnd, uMsg, wParam, lParam);
+
+		PostQuitMessage(0);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_SIZE:
+	{
+		OnSize(hWnd, uMsg, wParam, lParam);
+
+		return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_PAINT:
+	{
+		OnPaint(hWnd, uMsg, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_ERASEBKGND:
+	{
+		//return DefWindowProc(hWnd, uMsg, wParam, lParam);
+		return 1;
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_HSCROLL: 
+	{
+		OnHScroll(hWnd, uMsg, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_VSCROLL:
+	{
+		OnVScroll(hWnd, uMsg, wParam, lParam);
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	case WM_MOUSEWHEEL:
+	{
+		OnMouseWheel(hWnd, uMsg, wParam, lParam);
+	}	break;
+
+	//--------------------------------------------------------------------------
+	case WM_COMMAND:
+	{
+		int wmId = LOWORD(wParam);
+
+		switch (wmId)
+		{
+		case IDM_ABOUT:
+			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+			break;
+		case IDM_EXIT:
+			DestroyWindow(hWnd);
+			break;
+		default:
+			return DefWindowProc(hWnd, uMsg, wParam, lParam);
+		}
+	}
+	break;
+
+	//--------------------------------------------------------------------------
+	default:
+	{
+		return DefWindowProc(hWnd, uMsg, wParam, lParam);
+	}
+	break;
+	}
+
+
+	return 0;
+}
+
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
 	WNDCLASSEXW wcex;
@@ -87,19 +173,9 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 	return RegisterClassExW(&wcex);
 }
 
-//
-//   함수: InitInstance(HINSTANCE, int)
-//
-//   용도: 인스턴스 핸들을 저장하고 주 창을 만듭니다.
-//
-//   주석:
-//
-//        이 함수를 통해 인스턴스 핸들을 전역 변수에 저장하고
-//        주 프로그램 창을 만든 다음 표시합니다.
-//
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-	hInst = hInstance; // 인스턴스 핸들을 전역 변수에 저장합니다.
+	hInst = hInstance;
 
 	HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
@@ -115,146 +191,47 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 	return TRUE;
 }
 
-//
-//  함수: WndProc(HWND, UINT, WPARAM, LPARAM)
-//
-//  용도: 주 창의 메시지를 처리합니다.
-//
-//  WM_COMMAND  - 애플리케이션 메뉴를 처리합니다.
-//  WM_PAINT    - 주 창을 그립니다.
-//  WM_DESTROY  - 종료 메시지를 게시하고 반환합니다.
-//
-//
-//SIZE _size{ 0,0 };
-//bool _first = true;
 
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+
+
+
+/////////////////////////////////////////////////////////////////////////////
+//===========================================================================
+int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPWSTR    lpCmdLine,
+	_In_ int       nCmdShow)
 {
-	switch (message)
-	{
-	//--------------------------------------------------------------------------
-	case WM_CREATE:
-	{
-		RECT rect;
+	UNREFERENCED_PARAMETER(hPrevInstance);
+	UNREFERENCED_PARAMETER(lpCmdLine);
 
-		blend2d_winapi_init(hWnd);
-		GetClientRect(hWnd, &rect);
-		blend2d_winapi_window_resize(rect.right, rect.bottom);
-		return DefWindowProc(hWnd, message, wParam, lParam);
+
+	LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+	LoadStringW(hInstance, IDC_APP, szWindowClass, MAX_LOADSTRING);
+
+	MyRegisterClass(hInstance);
+
+
+	if (!InitInstance(hInstance, nCmdShow))
+	{
+		return FALSE;
 	}
-	break;
 
-	//--------------------------------------------------------------------------
-	case WM_DESTROY:
+
+	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_APP));
+
+	MSG msg;
+
+	
+	while (GetMessage(&msg, nullptr, 0, 0))
 	{
-		blend2d_winapi_term();
-
-		//return DefWindowProc(hWnd, message, wParam, lParam);
-		PostQuitMessage(0);
-	}
-	break;
-
-	//--------------------------------------------------------------------------
-	case WM_SIZE:
-	{
-		UINT nType = (UINT)wParam;
-
-		// lParam specifies the new of the client area
-		SIZE size = SIZE{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-		//_size = size;
-		blend2d_winapi_window_resize(size.cx, size.cy);
-
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-	break;
-
-	//--------------------------------------------------------------------------
-	case WM_PAINT:
-	{
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(hWnd, &ps);
-		// TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다...
-#if 0
-		// 최초 창 생성시 WM_SIZE보다 WM_PAINT가 먼저 발생된다.
-		if (_first)
+		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
 		{
-			if (_size.cx == 0 || _size.cy == 0)
-			{
-				blend2d_winapi_window_resize(ps.rcPaint.right, ps.rcPaint.bottom);
-			}
-
-			_first = false;
-		}
-#endif
-
-		blend2d_winapi_paint(hdc);
-
-		EndPaint(hWnd, &ps);
-	}
-	break;
-
-	//--------------------------------------------------------------------------
-	case WM_ERASEBKGND:
-	{
-		//return DefWindowProc(hWnd, message, wParam, lParam);
-		return 1;
-	}
-	break;
-
-	//--------------------------------------------------------------------------
-	case WM_HSCROLL: OnHScroll(wParam, lParam); return 0;
-	case WM_VSCROLL   : OnVScroll(wParam, lParam); return 0;
-	case WM_MOUSEWHEEL: OnMouseWheel(wParam, lParam); return 0;
-
-	//--------------------------------------------------------------------------
-	case WM_COMMAND:
-	{
-		int wmId = LOWORD(wParam);
-		// 메뉴 선택을 구문 분석합니다:
-		switch (wmId)
-		{
-		case IDM_ABOUT:
-			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-			break;
-		case IDM_EXIT:
-			DestroyWindow(hWnd);
-			break;
-		default:
-			return DefWindowProc(hWnd, message, wParam, lParam);
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
 		}
 	}
-	break;
-
-	//--------------------------------------------------------------------------
-	default:
-	{
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-	break;
-	}
 
 
-	return 0;
-}
-
-// 정보 대화 상자의 메시지 처리기입니다.
-INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
-{
-	UNREFERENCED_PARAMETER(lParam);
-	switch (message)
-	{
-	case WM_INITDIALOG:
-		return (INT_PTR)TRUE;
-
-	case WM_COMMAND:
-		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return (INT_PTR)TRUE;
-		}
-		break;
-	}
-
-
-	return (INT_PTR)FALSE;
+	return (int)msg.wParam;
 }

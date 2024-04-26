@@ -1,10 +1,10 @@
 #pragma once
 
-void blend2d_winapi_window_resize(int cx, int cy);
-void blend2d_winapi_paint(HDC hdc);
-void blend2d_winapi_init(HWND hwnd);
-void blend2d_winapi_term(void);
+void OnCreate(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void OnDestroy(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void OnSize(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void OnPaint(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
-void OnHScroll(WPARAM wparam, LPARAM lparam);
-void OnVScroll(WPARAM wparam, LPARAM lparam);
-void OnMouseWheel(WPARAM wparam, LPARAM lparam);
+void OnHScroll(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void OnVScroll(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+void OnMouseWheel(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
