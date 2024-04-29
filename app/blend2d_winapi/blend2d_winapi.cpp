@@ -1061,6 +1061,8 @@ public:
 
 		std::int64_t x;
 		std::int64_t y;
+		std::int64_t cx;
+		std::int64_t cy;
 
 		std::int64_t text_offset_x;
 		std::int64_t text_offset_y;
@@ -1074,25 +1076,23 @@ public:
 		text_offset_x = 5;
 		text_offset_y = 15;
 
+		cx = _window_cx;
+		cy = _window_cy;
 
 		ctx->setStrokeWidth(1);
 		ctx->setStrokeStyle(BLRgba32(0x20FFFFFF));
 		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
-
-		for (y = 0; y < _window_cy; y += 100)
+		for (y = 0; y < cy; y += 100)
 		{
-			for (x = 0; x < _window_cx; x += 100)
+			for (x = 0; x < cx; x += 100)
 			{
-				ctx->strokeLine(BLPoint(static_cast<double>(x), static_cast<double>(0)), BLPoint(static_cast<double>(x), static_cast<double>(_window_cy)));
-				ctx->strokeLine(BLPoint(static_cast<double>(0), static_cast<double>(y)), BLPoint(static_cast<double>(_window_cx), static_cast<double>(y)));
+				ctx->strokeLine(BLPoint(static_cast<double>(x), static_cast<double>(0)), BLPoint(static_cast<double>(x), static_cast<double>(cy)));
+				ctx->strokeLine(BLPoint(static_cast<double>(0), static_cast<double>(y)), BLPoint(static_cast<double>(cx), static_cast<double>(y)));
 
 
 				contents_x = _contents_x + x / _scale;
 				contents_y = _contents_y + y / _scale;
-
 				sprintf_s(label, "(%.1f, %.1f)", contents_x, contents_y);
-
-
 				ctx->fillUtf8Text(
 					BLPoint(static_cast<double>(x + text_offset_x), static_cast<double>(y + text_offset_y)),
 					_underlay_font, label);
@@ -1111,27 +1111,36 @@ public:
 		double x;
 		double y;
 
+		double cx;
+		double cy;
+
+		double text_offset_x;
+		double text_offset_y;
+
 		char label[128];
 
+
+		text_offset_x = 5.0;
+		text_offset_y = 15.0;
+
+		cx = _contents_x + _window_cx / _scale;
+		cy = _contents_y + _window_cy / _scale;
 
 		ctx->setStrokeWidth(1);
 		//ctx->setStrokeStartCap(BL_STROKE_CAP_ROUND);
 		//ctx->setStrokeEndCap(BL_STROKE_CAP_BUTT);
 		ctx->setStrokeStyle(BLRgba32(0x20FFFFFF));
 		ctx->setFillStyle(BLRgba32(0xFFFFFFFF));
-
-		for (y = 0.0; y < _contents_cy; y += 100.0)
+		for (y = 0.0; y < cy; y += 100.0)
 		{
-			for (x = 0.0; x < _contents_cx; x += 100.0)
+			for (x = 0.0; x < cx; x += 100.0)
 			{
-				ctx->strokeLine(BLPoint(x, 0), BLPoint(x, _contents_cy));
-				ctx->strokeLine(BLPoint(0, y), BLPoint(_contents_cx, y));
+				ctx->strokeLine(BLPoint(x, 0), BLPoint(x, cy));
+				ctx->strokeLine(BLPoint(0, y), BLPoint(cx, y));
 
 
 				sprintf_s(label, "(%.1f, %.1f)", x, y);
-
-
-				ctx->fillUtf8Text(BLPoint(x + 5, y + 15), _underlay_font, label);
+				ctx->fillUtf8Text(BLPoint(x + text_offset_x, y + text_offset_y), _underlay_font, label);
 			}
 		}
 	}
