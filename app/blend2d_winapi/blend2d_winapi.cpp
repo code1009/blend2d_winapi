@@ -571,8 +571,9 @@ std::int64_t on_scroll(
 class window
 {
 private:
-	double _contents_x{ 0 };
-	double _contents_y{ 0 };
+	double _contents_x { 0 };
+	double _contents_y { 0 };
+	
 	double _contents_cx { 0 };
 	double _contents_cy { 0 };
 
@@ -580,6 +581,7 @@ private:
 
 	std::int64_t _view_x {0};
 	std::int64_t _view_y {0};
+
 	std::int64_t _view_cx{0};
 	std::int64_t _view_cy{0};
 
@@ -593,8 +595,8 @@ private:
 	std::int64_t _view_y_scroll_page{ 0 };
 	std::int64_t _view_y_scroll_line{ 0 };
 
-	std::int64_t _window_cx{0};
-	std::int64_t _window_cy{0};
+	std::int64_t _window_cx{ 0 };
+	std::int64_t _window_cy{ 0 };
 	
 	std::int64_t _paint_time_usec{ 0 };
 
@@ -898,6 +900,20 @@ private:
 		*/
 
 		InvalidateRect(_hwnd, nullptr, TRUE);
+	}
+
+	//--------------------------------------------------------------------------
+public:
+	void window_to_contents(std::int64_t window_x, std::int64_t window_y, double& contents_x, double& contents_y)
+	{
+		contents_x = _contents_x + (window_x / _scale);
+		contents_y = _contents_y + (window_y / _scale);
+	}
+
+	void contents_to_window(double contents_x, double contents_y, std::int64_t& window_x, std::int64_t& window_y)
+	{
+		window_x = (contents_x - _contents_x) * _scale;
+		window_y = (contents_y - _contents_y) * _scale;
 	}
 
 	//--------------------------------------------------------------------------
